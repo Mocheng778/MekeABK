@@ -63,6 +63,7 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Error
@@ -74,7 +75,6 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Queue
@@ -127,12 +127,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 
+import com.abk.kernel.data.model.BUILD_TARGET_CUSTOM_SOURCE
 import com.abk.kernel.data.model.BUILD_TARGET_GKI
 import com.abk.kernel.data.model.BUILD_TARGET_ONEPLUS
+import com.abk.kernel.data.model.SOURCE_ACCESS_GITHUB_PRIVATE
+import com.abk.kernel.data.model.SOURCE_ACCESS_PUBLIC
 import com.abk.kernel.data.model.BuildPlan
 import com.abk.kernel.data.model.BuildProgress
 import com.abk.kernel.data.model.BuildQueueItem
@@ -151,6 +155,7 @@ import com.abk.kernel.data.model.KernelBuildConfig
 import com.abk.kernel.data.model.KernelSupport
 import com.abk.kernel.data.model.KSU_BRANCH_CUSTOM
 import com.abk.kernel.data.model.KSU_BRANCH_LATEST
+import com.abk.kernel.data.model.KSU_BRANCH_STABLE
 import com.abk.kernel.data.model.KSU_VARIANT_NONE
 import com.abk.kernel.data.model.KSU_VARIANT_RESUKISU
 import com.abk.kernel.data.model.KSU_VARIANT_SUKISU
@@ -232,8 +237,8 @@ fun BuildScreenMiuix(
         }
     }
     val ksuBranchOptions = remember { KernelSupport.ksuBranchOptions() }
-    val virtualizationSupportOptions = remember(config.kernelVersion) {
-        KernelSupport.virtualizationSupportOptions(config.kernelVersion)
+    val virtualizationSupportOptions = remember {
+        KernelSupport.virtualizationSupportOptions()
     }
     val subLevelOptions = remember(config.androidVersion, config.kernelVersion) {
         KernelSupport.subLevelOptions(config.androidVersion, config.kernelVersion)
@@ -286,14 +291,63 @@ fun BuildScreenMiuix(
     }
 
     // ── Callbacks for BuildTargetContentMiuix (extracted target section) ──
+    fun configureModuleSetEditor(
+        group: BuildCustomModuleGroup,
+        metadata: ExternalModuleMetadata,
+        currentGroupModules: List<CustomExternalModule>
+    ) {
+        val selectedChildIds = currentGroupModules
+            .mapNotNull { childId -> childId.childId.trim().takeIf { it.isNotBlank() } }
+            .distinct()
+        val stageSelections = metadata.children.associate { child ->
+            val existingStages = currentGroupModules
+                .filter { it.childId.equals(child.id, ignoreCase = true) }
+                .map { CustomExternalModuleStage.normalize(it.stage) }
+                .distinct()
+                .filter { it in child.supportedStages }
+            child.id to existingStages.ifEmpty {
+                child.recommendedStages
+                    .filter { it in child.supportedStages }
+                    .ifEmpty { listOf(child.defaultStage) }
+            }
+        }
+        editingModuleSetGroup = group
+        editingModuleSetMetadata = metadata
+        editingModuleSetChildIds = selectedChildIds
+        editingModuleSetStageSelections = stageSelections
+    }
+
     val onCheckCustomModuleMetadata: (String) -> Unit = { url ->
         coroutineScope.launch {
             vm.checkCustomExternalModuleMetadata(url)?.let { metadata ->
-                pendingCustomModuleUrl = url
-                pendingCustomModuleMetadata = metadata
-                selectedCustomModuleStages = metadata.recommendedStages
-                    .filter { it in metadata.supportedStages }
-                    .ifEmpty { listOf(metadata.defaultStage) }
+                if (metadata.kind == ModuleCatalogItemKind.MODULE_SET) {
+                    val group = BuildCustomModuleGroup(
+                        url = url,
+                        stages = emptyList(),
+                        catalogModule = null,
+                        entryKind = CustomExternalModuleEntryKind.MODULE_SET_CHILD,
+                        groupRepoUrl = url,
+                        groupName = metadata.name
+                    )
+                    val currentGroupModules = config.customExternalModules.filter {
+                        CustomExternalModuleEntryKind.normalize(it.entryKind) ==
+                            CustomExternalModuleEntryKind.MODULE_SET_CHILD &&
+                            (
+                                it.groupRepoUrl.equals(url, ignoreCase = true) ||
+                                    (it.groupRepoUrl.isBlank() && it.url.equals(url, ignoreCase = true))
+                                )
+                    }
+                    pendingCustomModuleUrl = url
+                    pendingCustomModuleMetadata = null
+                    selectedCustomModuleStages = emptyList()
+                    configureModuleSetEditor(group, metadata, currentGroupModules)
+                } else {
+                    pendingCustomModuleUrl = url
+                    pendingCustomModuleMetadata = metadata
+                    selectedCustomModuleStages = metadata.recommendedStages
+                        .filter { it in metadata.supportedStages }
+                        .ifEmpty { listOf(metadata.defaultStage) }
+                }
             }
         }
     }
@@ -345,25 +399,7 @@ fun BuildScreenMiuix(
                             (it.groupRepoUrl.isBlank() && it.url.equals(repoUrl, ignoreCase = true))
                         )
             }
-            val selectedChildIds = currentGroupModules
-                .mapNotNull { childId -> childId.childId.trim().takeIf { it.isNotBlank() } }
-                .distinct()
-            val stageSelections = metadata.children.associate { child ->
-                val existingStages = currentGroupModules
-                    .filter { it.childId.equals(child.id, ignoreCase = true) }
-                    .map { CustomExternalModuleStage.normalize(it.stage) }
-                    .distinct()
-                    .filter { it in child.supportedStages }
-                child.id to existingStages.ifEmpty {
-                    child.recommendedStages
-                        .filter { it in child.supportedStages }
-                        .ifEmpty { listOf(child.defaultStage) }
-                }
-            }
-            editingModuleSetGroup = group
-            editingModuleSetMetadata = metadata
-            editingModuleSetChildIds = selectedChildIds
-            editingModuleSetStageSelections = stageSelections
+            configureModuleSetEditor(group, metadata, currentGroupModules)
         }
     }
 
@@ -1001,6 +1037,10 @@ fun BuildScreenMiuix(
                                 }
                                 .filter { (_, stages) -> stages.isNotEmpty() }
                             if (vm.replaceModuleSetSelection(repoUrl, moduleSetMetadata, selections)) {
+                                if (pendingCustomModuleUrl.equals(repoUrl, ignoreCase = true)) {
+                                    customModuleUrl = ""
+                                    pendingCustomModuleUrl = ""
+                                }
                                 clearModuleSetEditor()
                             }
                         }
@@ -1204,6 +1244,29 @@ fun BuildScreenMiuix(
                                 onePlusUseProxyOptimization = true,
                                 onePlusUseUnicodeBypass = false
                             )
+                        } else if (target == BUILD_TARGET_CUSTOM_SOURCE) {
+                            config.copy(
+                                buildTarget = BUILD_TARGET_CUSTOM_SOURCE,
+                                kernelsuVariant = KSU_VARIANT_NONE,
+                                kernelsuBranch = KSU_BRANCH_STABLE,
+                                sourceUrl = config.sourceUrl,
+                                sourceRef = config.sourceRef,
+                                sourceAccessMode = SOURCE_ACCESS_PUBLIC,
+                                sourceDefconfigs = config.sourceDefconfigs.ifEmpty { listOf("gki_defconfig") },
+                                sourceDeviceLabel = config.sourceDeviceLabel,
+                                useZram = false,
+                                useBbg = false,
+                                useDdk = false,
+                                useNtsync = false,
+                                useNetworking = false,
+                                useKpm = false,
+                                useRekernel = false,
+                                cancelSusfs = true,
+                                virtualizationSupport = "off",
+                                useCustomExternalModules = false,
+                                customExternalModules = emptyList(),
+                                customKernelOptions = emptyList()
+                            )
                         } else {
                             config.copy(
                                 buildTarget = BUILD_TARGET_GKI,
@@ -1270,7 +1333,7 @@ fun BuildScreenMiuix(
                 AnimatedContent(
                     targetState = config.buildTarget,
                     transitionSpec = {
-                        val targetOrder = listOf(BUILD_TARGET_GKI, BUILD_TARGET_ONEPLUS)
+                        val targetOrder = listOf(BUILD_TARGET_GKI, BUILD_TARGET_CUSTOM_SOURCE, BUILD_TARGET_ONEPLUS)
                         val targetIndex = targetOrder.indexOf(targetState)
                         val initialIndex = targetOrder.indexOf(initialState).coerceAtLeast(0)
                         val direction = if (targetIndex > initialIndex) 1 else -1
@@ -1302,7 +1365,8 @@ fun BuildScreenMiuix(
                         value = config.version,
                         onValueChange = { vm.updateBuildConfig(config.copy(version = it)) },
                         label = stringResource(R.string.build_custom_version_optional),
-                        placeholder = ""
+                        placeholder = "",
+                        labelGap = 16.dp
                     )
                     ConfigPreviewItemMiuix(
                         icon = Icons.Default.Visibility,
@@ -1313,7 +1377,8 @@ fun BuildScreenMiuix(
                         value = config.buildTime,
                         onValueChange = { vm.updateBuildConfig(config.copy(buildTime = it)) },
                         label = stringResource(R.string.build_custom_time_optional),
-                        placeholder = stringResource(R.string.build_time_placeholder)
+                        placeholder = stringResource(R.string.build_time_placeholder),
+                        labelGap = 16.dp
                     )
                     ConfigPreviewItemMiuix(
                         icon = Icons.Default.Visibility,
@@ -1366,6 +1431,7 @@ private fun BuildTargetContentMiuix(
 ) {
     val state by vm.uiState.collectAsState()
     val isOnePlusBuild = config.buildTarget == BUILD_TARGET_ONEPLUS
+    val isCustomSourceBuild = config.buildTarget == BUILD_TARGET_CUSTOM_SOURCE
 
     val subLevelOptions = remember(config.androidVersion, config.kernelVersion) {
         KernelSupport.subLevelOptions(config.androidVersion, config.kernelVersion)
@@ -1381,8 +1447,8 @@ private fun BuildTargetContentMiuix(
         }
     }
     val ksuBranchOptions = remember { KernelSupport.ksuBranchOptions() }
-    val virtualizationSupportOptions = remember(config.kernelVersion) {
-        KernelSupport.virtualizationSupportOptions(config.kernelVersion)
+    val virtualizationSupportOptions = remember {
+        KernelSupport.virtualizationSupportOptions()
     }
 
     val catalogModules = remember(state.buildModuleRepositories) {
@@ -1405,7 +1471,69 @@ private fun BuildTargetContentMiuix(
         // ═══ 5. Kernel Version Section ══════════════════════════════
         SectionTitle(stringResource(R.string.build_kernel_version_config))
         Card(modifier = Modifier.fillMaxWidth()) {
-            if (isOnePlusBuild) {
+            if (isCustomSourceBuild) {
+                BuildTextFieldItem(
+                    value = config.sourceUrl,
+                    onValueChange = { vm.updateBuildConfig(config.copy(sourceUrl = it)) },
+                    label = stringResource(R.string.build_source_repo_url),
+                    placeholder = "https://github.com/LineageOS/android_kernel_xxx.git"
+                )
+                BuildTextFieldItem(
+                    value = config.sourceRef,
+                    onValueChange = { vm.updateBuildConfig(config.copy(sourceRef = it)) },
+                    label = stringResource(R.string.build_source_ref),
+                    placeholder = "lineage-23.2 或 40 位 commit SHA"
+                )
+                val sourceAccessOptions: List<String> = listOf(SOURCE_ACCESS_PUBLIC, SOURCE_ACCESS_GITHUB_PRIVATE)
+                val sourceAccessLabels = sourceAccessOptions.map { mode ->
+                    if (mode == SOURCE_ACCESS_GITHUB_PRIVATE) {
+                        stringResource(R.string.build_source_private)
+                    } else {
+                        stringResource(R.string.build_source_public)
+                    }
+                }
+                val sourceAccessIndex = sourceAccessOptions.indexOf(config.sourceAccessMode).coerceAtLeast(0)
+                OverlayDropdownPreference(
+                    title = stringResource(R.string.build_source_access),
+                    items = sourceAccessLabels,
+                    selectedIndex = sourceAccessIndex,
+                    renderInRootScaffold = true,
+                    onSelectedIndexChange = { index ->
+                        vm.updateBuildConfig(config.copy(sourceAccessMode = sourceAccessOptions[index]))
+                    }
+                )
+                BuildTextFieldItem(
+                    value = config.osPatchLevel,
+                    onValueChange = { vm.updateBuildConfig(config.copy(osPatchLevel = it)) },
+                    label = stringResource(R.string.build_source_patch_month),
+                    placeholder = "2025-09"
+                )
+                BuildTextFieldItem(
+                    value = config.sourceDeviceLabel,
+                    onValueChange = { vm.updateBuildConfig(config.copy(sourceDeviceLabel = it)) },
+                    label = stringResource(R.string.build_source_device_label),
+                    placeholder = ""
+                )
+                ArrowPreference(
+                    title = stringResource(R.string.build_source_defconfigs),
+                    summary = config.sourceDefconfigs.joinToString(" -> ")
+                        .ifBlank { stringResource(R.string.build_source_defconfig_base_hint) }
+                )
+                if (config.sourceAccessMode == SOURCE_ACCESS_GITHUB_PRIVATE) {
+                    top.yukonga.miuix.kmp.basic.Text(
+                        text = stringResource(
+                            if (state.customSourceSecretConfigured) {
+                                R.string.build_source_secret_exists
+                            } else {
+                                R.string.build_source_secret_missing
+                            }
+                        ),
+                        style = MiuixTheme.textStyles.body2,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
+                }
+            } else if (isOnePlusBuild) {
                 val deviceOptions = KernelSupport.onePlusDeviceManifestOptions
                 val deviceLabels = deviceOptions.map { KernelSupport.onePlusDeviceLabel(it) }
                 val deviceIndex = deviceOptions.indexOf(config.onePlusDeviceManifest).coerceAtLeast(0)
@@ -1937,7 +2065,8 @@ private fun BuildTargetContentMiuix(
                                 value = customModuleUrl,
                                 onValueChange = onCustomModuleUrlChange,
                                 label = stringResource(R.string.build_repo_url),
-                                placeholder = "https://github.com/user/module"
+                                placeholder = "https://github.com/user/module",
+                                bottomPadding = 2.dp
                             )
                         }
                         item(key = "add-button") {
@@ -1951,7 +2080,7 @@ private fun BuildTargetContentMiuix(
                                 enabled = customModuleUrl.isNotBlank() && !state.validatingCustomExternalModule,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                                    .padding(start = 16.dp, end = 16.dp, top = 1.dp, bottom = 6.dp)
                                     .height(48.dp)
                             ) {
                                 top.yukonga.miuix.kmp.basic.Text(
@@ -2369,7 +2498,10 @@ private fun BuildPlanHeroMiuix(
                         fontSize = 14.sp, color = descColor, minLines = 2
                     )
                     Spacer(Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         BuildStatusChipMiuix(ksuVariantDisplayName(config.kernelsuVariant))
                         BuildStatusChipMiuix("${config.kernelVersion} · ${config.androidVersion}")
                         BuildStatusChipMiuix(
@@ -2417,7 +2549,10 @@ private fun BuildPlanHeroMiuix(
                     fontSize = 14.sp, color = descColor, minLines = 2
                 )
                 Spacer(Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     BuildStatusChipMiuix(ksuVariantDisplayName(config.kernelsuVariant))
                     BuildStatusChipMiuix(
                         if (!config.cancelSusfs) stringResource(R.string.build_susfs_on) else stringResource(R.string.build_susfs_off)
@@ -2484,8 +2619,14 @@ private fun BuildPlanToolsCardMiuix(
                         fontWeight = FontWeight.SemiBold
                     )
                     top.yukonga.miuix.kmp.basic.Text(
+                        text = stringResource(R.string.build_plan_tools_desc),
+                        style = MiuixTheme.textStyles.body2,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                    )
+                    top.yukonga.miuix.kmp.basic.Text(
                         text = currentSummary,
                         style = MiuixTheme.textStyles.body2,
+                        fontSize = 12.sp,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         maxLines = if (expanded) 3 else 1,
                         overflow = TextOverflow.Ellipsis
@@ -2562,16 +2703,18 @@ private fun BuildTargetSelectorMiuix(
     selected: String,
     onSelect: (String) -> Unit,
 ) {
-    val targets = listOf(BUILD_TARGET_GKI, BUILD_TARGET_ONEPLUS)
+    val targets = listOf(BUILD_TARGET_GKI, BUILD_TARGET_CUSTOM_SOURCE, BUILD_TARGET_ONEPLUS)
     val selectedIndex = targets.indexOf(selected).coerceAtLeast(0)
 
     var rowWidthPx by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
     val gapPx = with(density) { 8.dp.roundToPx() }
-    val buttonWidthPx = if (rowWidthPx > gapPx) (rowWidthPx - gapPx) / 2 else rowWidthPx / 2
+    val targetCount = targets.size.coerceAtLeast(1)
+    val totalGapPx = gapPx * (targetCount - 1)
+    val buttonWidthPx = if (rowWidthPx > totalGapPx) (rowWidthPx - totalGapPx) / targetCount else rowWidthPx / targetCount
     val pillWidthDp = with(density) { buttonWidthPx.toDp() }
 
-    val pillTargetOffsetPx = if (selectedIndex == 0) 0f else (buttonWidthPx + gapPx).toFloat()
+    val pillTargetOffsetPx = (selectedIndex * (buttonWidthPx + gapPx)).toFloat()
     val pillOffsetX by animateFloatAsState(
         targetValue = pillTargetOffsetPx,
         animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f),
@@ -2635,20 +2778,22 @@ private fun BuildTargetSelectorMiuix(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 8.dp)
+                            modifier = Modifier.padding(horizontal = 4.dp)
                         ) {
                             top.yukonga.miuix.kmp.basic.Icon(
-                                imageVector = if (target == BUILD_TARGET_ONEPLUS)
-                                    Icons.Default.PhoneAndroid
-                                else
-                                    Icons.Default.Memory,
+                                imageVector = when (target) {
+                                    BUILD_TARGET_ONEPLUS -> Icons.Default.PhoneAndroid
+                                    BUILD_TARGET_CUSTOM_SOURCE -> Icons.Default.Code
+                                    else -> Icons.Default.Memory
+                                },
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp),
                                 tint = contentColor
                             )
-                            Spacer(Modifier.width(6.dp))
+                            Spacer(Modifier.width(4.dp))
                             top.yukonga.miuix.kmp.basic.Text(
                                 text = buildTargetLabel(target),
+                                style = MiuixTheme.textStyles.body2,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 color = contentColor
@@ -2835,12 +2980,14 @@ private fun BuildTextFieldItem(
     onValueChange: (String) -> Unit,
     label: String,
     placeholder: String,
+    bottomPadding: Dp = 6.dp,
+    labelGap: Dp = 6.dp,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+            .padding(start = 16.dp, end = 16.dp, top = 13.dp, bottom = bottomPadding),
+        verticalArrangement = Arrangement.spacedBy(labelGap)
     ) {
         top.yukonga.miuix.kmp.basic.Text(
             text = label,
@@ -2856,7 +3003,7 @@ private fun BuildTextFieldItem(
                 )
                 .border(
                     width = 1.dp,
-                    color = MiuixTheme.colorScheme.primary.copy(alpha = 0.3f),
+                    color = MiuixTheme.colorScheme.primary,
                     shape = RoundedCornerShape(17.dp)
                 )
                 .padding(horizontal = 20.dp, vertical = 14.dp)
@@ -2896,7 +3043,7 @@ private fun ConfigPreviewItemMiuix(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 11.dp),
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -3488,6 +3635,7 @@ private fun buildPlanSummary(config: KernelBuildConfig): String {
 
 @Composable
 private fun buildTargetLabel(target: String): String = when (target) {
+    BUILD_TARGET_CUSTOM_SOURCE -> stringResource(R.string.build_target_custom_source)
     BUILD_TARGET_ONEPLUS -> stringResource(R.string.build_target_oneplus)
     else -> stringResource(R.string.build_target_gki)
 }
@@ -3925,6 +4073,7 @@ fun BuildKernelOptionsScreenMiuix(vm: MainViewModel) {
                         }
                     },
                     actions = {
+                        // Add-entry + Import dropdown (matches M3: only these two, no clear here).
                         Box {
                             OverlayListPopup(
                                 show = showKernelOptionActionMenu,
@@ -3935,7 +4084,7 @@ fun BuildKernelOptionsScreenMiuix(vm: MainViewModel) {
                                 ListPopupColumn {
                                     DropdownImpl(
                                         text = stringResource(R.string.build_kernel_option_add),
-                                        optionSize = 3,
+                                        optionSize = 2,
                                         isSelected = false,
                                         index = 0,
                                         onSelectedIndexChange = {
@@ -3946,8 +4095,8 @@ fun BuildKernelOptionsScreenMiuix(vm: MainViewModel) {
                                         },
                                     )
                                     DropdownImpl(
-                                        text = stringResource(R.string.build_kernel_option_import_title),
-                                        optionSize = 3,
+                                        text = stringResource(R.string.build_import),
+                                        optionSize = 2,
                                         isSelected = false,
                                         index = 1,
                                         onSelectedIndexChange = {
@@ -3958,18 +4107,6 @@ fun BuildKernelOptionsScreenMiuix(vm: MainViewModel) {
                                             kernelOptionImportError = null
                                         },
                                     )
-                                    DropdownImpl(
-                                        text = stringResource(R.string.build_kernel_option_clear),
-                                        optionSize = 3,
-                                        isSelected = false,
-                                        index = 2,
-                                        onSelectedIndexChange = {
-                                            if (config.customKernelOptions.isEmpty()) return@DropdownImpl
-                                            showKernelOptionActionMenu = false
-                                            clearAllKernelOptions = false
-                                            showClearKernelOptionsDialog = true
-                                        },
-                                    )
                                 }
                             }
                             top.yukonga.miuix.kmp.basic.IconButton(
@@ -3977,11 +4114,25 @@ fun BuildKernelOptionsScreenMiuix(vm: MainViewModel) {
                                 holdDownState = showKernelOptionActionMenu,
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.MoreVert,
+                                    imageVector = Icons.Default.Add,
                                     contentDescription = stringResource(R.string.build_kernel_option_menu),
                                     tint = MiuixTheme.colorScheme.onSurface,
                                 )
                             }
+                        }
+                        // Separate trash-can (clear) button on the right, matching M3.
+                        top.yukonga.miuix.kmp.basic.IconButton(
+                            onClick = {
+                                clearAllKernelOptions = false
+                                showClearKernelOptionsDialog = true
+                            },
+                            enabled = config.customKernelOptions.isNotEmpty(),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DeleteSweep,
+                                contentDescription = stringResource(R.string.build_kernel_option_clear),
+                                tint = MiuixTheme.colorScheme.onSurface,
+                            )
                         }
                     }
                 )
@@ -4196,12 +4347,14 @@ private fun EditCustomKernelOptionDialogMiuix(
                         value = option.symbol,
                         onValueChange = { onOptionChange(option.copy(symbol = it)) },
                         label = stringResource(R.string.build_kernel_option_symbol),
-                        placeholder = "CONFIG_EXAMPLE"
+                        placeholder = "CONFIG_EXAMPLE",
+                        labelGap = 16.dp
                     )
                     OverlayDropdownPreference(
                         title = stringResource(R.string.build_kernel_option_mode),
                         items = modeLabels,
                         selectedIndex = selectedModeIndex,
+                        renderInRootScaffold = false,
                         onSelectedIndexChange = { index ->
                             onOptionChange(option.copy(mode = modeOptions[index]))
                         }

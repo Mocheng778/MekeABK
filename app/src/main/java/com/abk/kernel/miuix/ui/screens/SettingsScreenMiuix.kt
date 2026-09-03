@@ -39,6 +39,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.verticalScroll
@@ -790,11 +792,33 @@ fun SettingsScreenMiuix(
                 // ═══════════════════════════════════════════════════════════
                 SectionTitle(stringResource(R.string.settings_about))
                 Card(modifier = Modifier.fillMaxWidth()) {
-                    ArrowPreference(
-                        title = stringResource(R.string.app_full_name),
-                        summary = "${stringResource(R.string.app_full_name)} v${BuildConfig.VERSION_NAME}",
-                        startAction = { Icon(Icons.Default.Info, contentDescription = null, tint = iconTint) }
-                    )
+                    // Non-clickable version row: title + summary + info icon, but no chevron
+                    // (matches the M3 `ExpressiveListItem` without `trailingContent`).
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp)
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Info, contentDescription = null, tint = iconTint)
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            MiuixText(
+                                text = stringResource(R.string.app_full_name),
+                                color = MiuixTheme.colorScheme.onSurface,
+                                style = MiuixTheme.textStyles.body1
+                            )
+                            MiuixText(
+                                text = "${stringResource(R.string.app_full_name)} v${BuildConfig.VERSION_NAME}",
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                style = MiuixTheme.textStyles.body2
+                            )
+                        }
+                    }
                     ArrowPreference(
                         title = stringResource(R.string.settings_about),
                         summary = stringResource(R.string.settings_about_desc),
@@ -1148,6 +1172,9 @@ private fun SecuritySettingsGroupMiuix(
     var showDisableConfirm1 by remember { mutableStateOf(false) }
     var showDisableConfirm2 by remember { mutableStateOf(false) }
     var showResetConfirm by remember { mutableStateOf(false) }
+    var showCustomSourceSecretDialog by remember { mutableStateOf(false) }
+    var showDeleteCustomSourceSecretConfirm by remember { mutableStateOf(false) }
+    var customSourcePat by remember { mutableStateOf("") }
     var importPublicKeyText by remember { mutableStateOf("") }
     var importPrivateKeyText by remember { mutableStateOf("") }
     var importError by remember { mutableStateOf<String?>(null) }
@@ -1169,6 +1196,10 @@ private fun SecuritySettingsGroupMiuix(
             }
             importError = null
         }
+    }
+
+    LaunchedEffect(canManageKeys) {
+        if (canManageKeys) vm.refreshCustomSourceSecretStatus()
     }
 
     SectionTitle(stringResource(R.string.settings_security))
@@ -1217,6 +1248,29 @@ private fun SecuritySettingsGroupMiuix(
             enabled = !state.artifactSigningOperationInFlight && state.artifactSigningVerificationEnabled && canManageKeys,
             onClick = { showResetConfirm = true }
         )
+        ArrowPreference(
+            title = stringResource(R.string.settings_custom_source_secret_title),
+            summary = when {
+                !canManageKeys -> stringResource(R.string.settings_security_requires_fork)
+                state.customSourceSecretConfigured -> stringResource(R.string.settings_custom_source_secret_configured)
+                else -> stringResource(R.string.settings_custom_source_secret_missing)
+            },
+            startAction = { Icon(Icons.Default.Password, contentDescription = null, tint = iconTint) },
+            enabled = canManageKeys && !state.customSourceSecretOperationInFlight,
+            onClick = {
+                customSourcePat = ""
+                showCustomSourceSecretDialog = true
+            }
+        )
+        if (state.customSourceSecretConfigured) {
+            ArrowPreference(
+                title = stringResource(R.string.settings_custom_source_secret_delete),
+                summary = stringResource(R.string.settings_custom_source_secret_delete_desc),
+                startAction = { Icon(Icons.Default.Delete, contentDescription = null, tint = iconTint) },
+                enabled = canManageKeys && !state.customSourceSecretOperationInFlight,
+                onClick = { showDeleteCustomSourceSecretConfirm = true }
+            )
+        }
         if (state.artifactSigningOperationInFlight) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -1229,6 +1283,123 @@ private fun SecuritySettingsGroupMiuix(
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     style = MiuixTheme.textStyles.body2
                 )
+            }
+        }
+        if (state.customSourceSecretOperationInFlight) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                MiuixText(
+                    text = stringResource(R.string.settings_custom_source_secret_operation),
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    style = MiuixTheme.textStyles.body2
+                )
+            }
+        }
+    }
+
+    if (showCustomSourceSecretDialog) {
+        WindowDialog(
+            show = true,
+            title = stringResource(R.string.settings_custom_source_secret_dialog_title),
+            onDismissRequest = {
+                if (!state.customSourceSecretOperationInFlight) showCustomSourceSecretDialog = false
+            }
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                MiuixText(
+                    text = stringResource(R.string.settings_custom_source_secret_dialog_desc),
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    style = MiuixTheme.textStyles.body2
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, MiuixTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                        .padding(12.dp)
+                ) {
+                    BasicTextField(
+                        value = customSourcePat,
+                        onValueChange = { customSourcePat = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = MiuixTheme.textStyles.body1.copy(color = MiuixTheme.colorScheme.onSurface),
+                        cursorBrush = SolidColor(MiuixTheme.colorScheme.primary),
+                        enabled = !state.customSourceSecretOperationInFlight,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done
+                        )
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    MiuixTextButton(
+                        modifier = Modifier.weight(1f),
+                        text = stringResource(android.R.string.cancel),
+                        onClick = { showCustomSourceSecretDialog = false },
+                        enabled = !state.customSourceSecretOperationInFlight
+                    )
+                    Spacer(Modifier.width(20.dp))
+                    MiuixTextButton(
+                        modifier = Modifier.weight(1f),
+                        text = stringResource(R.string.save),
+                        enabled = customSourcePat.isNotBlank() && !state.customSourceSecretOperationInFlight,
+                        colors = if (customSourcePat.isNotBlank() && !state.customSourceSecretOperationInFlight) {
+                            ButtonDefaults.textButtonColorsPrimary()
+                        } else {
+                            ButtonDefaults.textButtonColors()
+                        },
+                        onClick = {
+                            vm.updateCustomSourceSecret(customSourcePat)
+                            customSourcePat = ""
+                            showCustomSourceSecretDialog = false
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    if (showDeleteCustomSourceSecretConfirm) {
+        WindowDialog(
+            show = true,
+            title = stringResource(R.string.settings_custom_source_secret_delete),
+            onDismissRequest = { showDeleteCustomSourceSecretConfirm = false }
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                MiuixText(
+                    text = stringResource(R.string.settings_custom_source_secret_delete_confirm),
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    style = MiuixTheme.textStyles.body2
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    MiuixTextButton(
+                        modifier = Modifier.weight(1f),
+                        text = stringResource(android.R.string.cancel),
+                        onClick = { showDeleteCustomSourceSecretConfirm = false }
+                    )
+                    Spacer(Modifier.width(20.dp))
+                    MiuixTextButton(
+                        modifier = Modifier.weight(1f),
+                        text = stringResource(R.string.delete),
+                        colors = ButtonDefaults.textButtonColors(
+                            textColor = MiuixTheme.colorScheme.error
+                        ),
+                        onClick = {
+                            vm.deleteCustomSourceSecret()
+                            showDeleteCustomSourceSecretConfirm = false
+                        }
+                    )
+                }
             }
         }
     }

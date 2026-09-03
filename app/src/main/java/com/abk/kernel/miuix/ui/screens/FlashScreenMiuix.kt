@@ -1236,6 +1236,7 @@ private fun MiuixPrebuiltReleaseCard(
                         style = MiuixTheme.textStyles.title4,
                         fontWeight = FontWeight.SemiBold,
                         color = MiuixTheme.colorScheme.onSurface,
+                        fontSize = 14.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -1246,6 +1247,7 @@ private fun MiuixPrebuiltReleaseCard(
                         )}",
                         style = MiuixTheme.textStyles.body2,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        fontSize = 12.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -1258,15 +1260,24 @@ private fun MiuixPrebuiltReleaseCard(
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                if (release.assetCount > 0) {
-                    MiuixTagChip(
-                        label = stringResource(R.string.flash_asset_count, release.assetCount),
-                        primary = true
-                    )
-                }
+                MiuixTagChip(
+                    label = if (release.assetCount > 0) {
+                        stringResource(R.string.flash_asset_count, release.assetCount)
+                    } else {
+                        stringResource(R.string.flash_asset_load_later)
+                    },
+                    primary = true,
+                    large = true
+                )
                 MiuixTagChip(
                     label = stringResource(R.string.flash_manual_download),
-                    primary = false
+                    primary = false,
+                    large = true
+                )
+                MiuixTagChip(
+                    label = stringResource(R.string.flash_filter_by_release),
+                    primary = false,
+                    large = true
                 )
             }
         }

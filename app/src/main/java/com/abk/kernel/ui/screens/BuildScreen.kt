@@ -149,8 +149,8 @@ fun BuildScreen(
         }
     }
     val ksuBranchOptions = remember { KernelSupport.ksuBranchOptions() }
-    val virtualizationSupportOptions = remember(config.kernelVersion) {
-        KernelSupport.virtualizationSupportOptions(config.kernelVersion)
+    val virtualizationSupportOptions = remember {
+        KernelSupport.virtualizationSupportOptions()
     }
     val subLevelOptions = remember(config.androidVersion, config.kernelVersion) {
         KernelSupport.subLevelOptions(config.androidVersion, config.kernelVersion)
