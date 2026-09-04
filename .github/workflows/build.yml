@@ -1155,7 +1155,7 @@ jobs:
             --feature "rekernel=$USE_REKERNEL"
           mkdir -p "$transaction_dir"
           if [ "$USE_KPM" = "true" ] &&
-            { [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "ReSukiSU" ]; }; then
+            { [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "ReSukiSU" ] && [ "$KSU_VARIANT" != "ApkeSU" ]; }; then
             python3 "$GITHUB_WORKSPACE/.github/scripts/custom-source-feature-status.py" mark \
               --file "$status_file" \
               --id kpm \
@@ -1287,6 +1287,10 @@ jobs:
             "ReSukiSU")
               echo "添加 ReSukiSU..."
               curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s "$BRANCH"
+              ;;
+            "ApkeSU")
+              echo "添加 ApkeSU..."
+              curl -LSs "https://raw.githubusercontent.com/fixz232/ApkeSU/main/kernel/setup.sh" | bash -s $BRANCH
               ;;
           esac
 
@@ -1851,12 +1855,15 @@ jobs:
             "SukiSU")
               echo "SukiSU 使用单独步骤注入 SUSFS Kconfig 符号"
               ;;
+            "ApkeSU")
+              echo "ApkeSU 使用单独步骤注入 SUSFS Kconfig 符号（基于 SukiSU-Ultra）"
+              ;;
           esac
 
           cd $KERNEL_ROOT/common
           patch -p1 < "50_add_susfs_in_gki-${ABK_ANDROID_VERSION}-${ABK_KERNEL_VERSION}.patch" || true
 
-          if [ "$ABK_KSU_VARIANT" == "SukiSU" ] || [ "$ABK_KSU_VARIANT" == "ReSukiSU" ]; then
+          if [ "$ABK_KSU_VARIANT" == "SukiSU" ] || [ "$ABK_KSU_VARIANT" == "ReSukiSU" ] || [ "$ABK_KSU_VARIANT" == "ApkeSU" ]; then
             SUSFS_C="./fs/susfs.c"
             if [ -f "$SUSFS_C" ] && grep -q '^static void susfs_run_sus_path_loop(' "$SUSFS_C"; then
               sed -i 's/^static void susfs_run_sus_path_loop(/void susfs_run_sus_path_loop(/' "$SUSFS_C"
@@ -1864,7 +1871,7 @@ jobs:
             fi
           fi
 
-          if [ "$ABK_KSU_VARIANT" == "Official" ] || [ "$ABK_KSU_VARIANT" == "SukiSU" ] || [ "$ABK_KSU_VARIANT" == "ReSukiSU" ]; then
+          if [ "$ABK_KSU_VARIANT" == "Official" ] || [ "$ABK_KSU_VARIANT" == "SukiSU" ] || [ "$ABK_KSU_VARIANT" == "ReSukiSU" ] || [ "$ABK_KSU_VARIANT" == "ApkeSU" ]; then
             CURRENT_SUB="$ABK_SUB_LEVEL"
             if [[ ! "$CURRENT_SUB" =~ ^[0-9]+$ ]]; then
               CURRENT_SUB=99999
@@ -2471,7 +2478,7 @@ jobs:
           PY
 
       - name: 注入 SukiSU/ReSukiSU KPM Kconfig
-        if: inputs.use_kpm && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU')
+        if: inputs.use_kpm && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU')
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: kpm
@@ -3489,7 +3496,7 @@ jobs:
           fi
 
           kpm_config_supported="false"
-          if [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ]; then
+          if [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ApkeSU" ]; then
             if [ "$kpm_kconfig_ready" = "true" ] && [ -f "$kpm_kconfig_path" ]; then
               kpm_config_supported="true"
             else
@@ -3502,7 +3509,7 @@ jobs:
             fi
           fi
 
-          if [ "${{ inputs.use_kpm }}" == "true" ] && ! feature_disabled kpm && { [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ]; }; then
+          if [ "${{ inputs.use_kpm }}" == "true" ] && ! feature_disabled kpm && { [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ApkeSU" ]; }; then
             if [ "$kpm_config_supported" = "true" ]; then
               echo "CONFIG_KPM=y" >> "$DEFCONFIG"
               case "$kpm_kconfig_status" in
@@ -3520,14 +3527,14 @@ jobs:
               echo "::error::请求启用 KPM，但当前 ${{ inputs.ksu_variant }} 源码树仍未提供 config KPM。"
               exit 1
             fi
-          elif [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ]; then
+          elif [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ApkeSU" ]; then
             if [ "$kpm_config_supported" = "true" ]; then
               echo "# CONFIG_KPM is not set" >> "$DEFCONFIG"
               echo "检测到 KPM Kconfig，已显式关闭 CONFIG_KPM。"
             fi
           fi
 
-          if [ "${{ inputs.enable_susfs }}" != "true" ] && { [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ]; }; then
+          if [ "${{ inputs.enable_susfs }}" != "true" ] && { [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ApkeSU" ]; }; then
             cat >> "$DEFCONFIG" << 'EOF'
           # CONFIG_KSU_SUSFS is not set
           # CONFIG_KSU_SUSFS_SUS_PATH is not set
@@ -3556,7 +3563,7 @@ jobs:
           sed -i 's/check_defconfig//' ./common/build.config.gki
 
       - name: 配置 KPM 超级密码
-        if: inputs.use_kpm && inputs.kpm_password != '' && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU')
+        if: inputs.use_kpm && inputs.kpm_password != '' && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU')
         run: |
           echo "KPM 超级密码将在 Image KPM patch 阶段写入。"
           echo "CONFIG_KPM_SUPER_KEY 不是当前 KSU Kconfig 符号，不能写入 defconfig fragment。"
@@ -5437,7 +5444,7 @@ jobs:
           python3 "$GITHUB_WORKSPACE/.github/scripts/fix_sukisu_susfs.py" "$KERNEL_ROOT"
 
       - name: 最终修复 SukiSU/ReSukiSU 源码兼容
-        if: inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU'
+        if: inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU'
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: kernelsu
@@ -5598,7 +5605,7 @@ jobs:
           fi
 
       - name: 修复 SukiSU/ReSukiSU android16-6.12 源码兼容
-        if: (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU') && inputs.android_version == 'android16' && inputs.kernel_version == '6.12'
+        if: (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU') && inputs.android_version == 'android16' && inputs.kernel_version == '6.12'
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: kernelsu
@@ -6053,7 +6060,7 @@ jobs:
             echo "如果日期不同或相差过远则补丁失效、编译失败"
 
       - name: 应用 KPM 补丁 (SukiSU/ReSukiSU)
-        if: inputs.use_kpm && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU')
+        if: inputs.use_kpm && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU')
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: kpm

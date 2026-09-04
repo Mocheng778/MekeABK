@@ -83,7 +83,7 @@ jobs:
 
           effective_kpm="$USE_KPM"
           effective_lz4kd="$USE_LZ4KD"
-          if [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "ReSukiSU" ]; then
+          if [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "ReSukiSU" ] && [ "$KSU_VARIANT" != "ApkeSU" ]; then
             effective_kpm="false"
           fi
           if [ "$KSU_VARIANT" = "None" ]; then
@@ -204,7 +204,7 @@ jobs:
           if [[ "$CPU" == mt* && "$USE_PROXY_OPTIMIZATION" = "true" ]]; then
             echo "::warning::MTK 分支已强制关闭代理相关网络优化。"
           fi
-          if [ "$USE_KPM" = "true" ] && [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "ReSukiSU" ]; then
+          if [ "$USE_KPM" = "true" ] && [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "ReSukiSU" ] && [ "$KSU_VARIANT" != "ApkeSU" ]; then
             echo "::error::Official / None 变体不支持 KPM，请关闭 KPM 后重试。"
             exit 1
           fi
@@ -329,6 +329,9 @@ jobs:
               ReSukiSU)
                 curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s main
                 ;;
+              ApkeSU)
+                curl -LSs "https://raw.githubusercontent.com/fixz232/ApkeSU/main/kernel/setup.sh" | bash -s main
+                ;;
               *)
                 echo "::error::未知 KSU 变体: $KSU_VARIANT"
                 exit 1
@@ -374,12 +377,12 @@ jobs:
             cp "$WORKSPACE/susfs4oki/kernel_patches/50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch" "$COMMON_ROOT/" || true
             cp "$WORKSPACE"/susfs4oki/kernel_patches/fs/* "$COMMON_ROOT/fs/" || true
             cp "$WORKSPACE"/susfs4oki/kernel_patches/include/linux/* "$COMMON_ROOT/include/linux/" || true
-          elif [ "$KSU_VARIANT" = "SukiSU" ] || [ "$KSU_VARIANT" = "ReSukiSU" ]; then
+          elif [ "$KSU_VARIANT" = "SukiSU" ] || [ "$KSU_VARIANT" = "ReSukiSU" ] || [ "$KSU_VARIANT" = "ApkeSU" ]; then
             case "$KSU_VARIANT" in
               ReSukiSU)
                 MANUAL_HOOK_PATCH_NAME="scope_min_manual_hooks_v1.9.patch"
                 ;;
-              SukiSU)
+              SukiSU|ApkeSU)
                 case "$KERNEL_VERSION" in
                   5.10|5.15)
                     MANUAL_HOOK_PATCH_NAME="scope_min_manual_hooks_v1.6.patch"
@@ -559,7 +562,7 @@ jobs:
           PY
 
       - name: 修复 SukiSU/ReSukiSU sulog 兼容
-        if: ${{ inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' }}
+        if: ${{ inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -642,7 +645,7 @@ jobs:
           PY
 
       - name: 修复 SukiSU/ReSukiSU android16-6.12 源码兼容
-        if: ${{ (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU') && inputs.android_version == 'android16' && inputs.kernel_version == '6.12' }}
+        if: ${{ (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU') && inputs.android_version == 'android16' && inputs.kernel_version == '6.12' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -728,7 +731,7 @@ jobs:
           PY
 
       - name: 注入 SukiSU/ReSukiSU KPM Kconfig
-        if: ${{ inputs.use_kpm && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU') }}
+        if: ${{ inputs.use_kpm && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU') }}
         shell: bash
         run: |
           set -euo pipefail
@@ -845,7 +848,7 @@ jobs:
           EOF
 
           kpm_config_supported="false"
-          if [ "$KSU_VARIANT" = "SukiSU" ] || [ "$KSU_VARIANT" = "ReSukiSU" ]; then
+          if [ "$KSU_VARIANT" = "SukiSU" ] || [ "$KSU_VARIANT" = "ReSukiSU" ] || [ "$KSU_VARIANT" = "ApkeSU" ]; then
             if [ "$kpm_kconfig_ready" = "true" ] && [ -f "$kpm_kconfig_path" ]; then
               kpm_config_supported="true"
             else
@@ -874,7 +877,7 @@ jobs:
           elif [ "$EFFECTIVE_KPM" = "true" ]; then
             echo "::error::请求启用 KPM，但当前 $KSU_VARIANT 源码树仍未提供 config KPM。"
             exit 1
-          elif [ "$KSU_VARIANT" = "SukiSU" ] || [ "$KSU_VARIANT" = "ReSukiSU" ]; then
+          elif [ "$KSU_VARIANT" = "SukiSU" ] || [ "$KSU_VARIANT" = "ReSukiSU" ] || [ "$KSU_VARIANT" = "ApkeSU" ]; then
             if [ "$kpm_config_supported" = "true" ]; then
               echo "# CONFIG_KPM is not set" >> "$DEFCONFIG_PATH"
               echo "检测到 KPM Kconfig，已显式关闭 CONFIG_KPM。"

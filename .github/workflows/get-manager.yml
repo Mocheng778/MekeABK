@@ -98,12 +98,15 @@ jobs:
           elif [ "${{ inputs.kernelsu_variant }}" == "Official" ]; then
             echo "This is the Official"
             git clone https://github.com/tiann/KernelSU.git KernelSU
+          elif [ "${{ inputs.kernelsu_variant }}" == "ApkeSU" ]; then
+            echo "This is the ApkeSU variant"
+            git clone https://github.com/fixz232/ApkeSU.git KernelSU
           else
             echo "Unknown variant"
             exit 1
           fi
 
-          VAR=$([[ "${{ inputs.kernelsu_variant }}" == "SukiSU" ]] && echo 700 || echo 200)
+          VAR=$([[ "${{ inputs.kernelsu_variant }}" == "SukiSU" || "${{ inputs.kernelsu_variant }}" == "ApkeSU" ]] && echo 700 || echo 200)
 
           cd KernelSU
           git fetch origin "$BRANCH"
@@ -118,6 +121,8 @@ jobs:
             KSU_VERSION=$((30700 + KSU_GIT_VERSION))
           elif [ "${{ inputs.kernelsu_variant }}" == "Official" ]; then
             KSU_VERSION=$((30000 + KSU_GIT_VERSION))
+          elif [ "${{ inputs.kernelsu_variant }}" == "ApkeSU" ]; then
+            KSU_VERSION=$((40000 + KSU_GIT_VERSION - 2815))
           fi
           echo $KSU_VERSION
           echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
@@ -214,6 +219,14 @@ jobs:
             "ReSukiSU")
               # ReSukiSU has no release APKs; Actions build-manager (fallback to main latest in script).
               download_manager_for_repo "ReSukiSU/ReSukiSU" "ReSukiSU"
+              ;;
+            "ApkeSU")
+              # ApkeSU: 优先从 release 下载管理器 APK，回退到 Actions build-manager
+              if [[ "$BRANCH" =~ ^[Vv]?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                download_tag_release_apk "fixz232/ApkeSU" "$BRANCH" "ApkeSU"
+              else
+                download_manager_for_repo "fixz232/ApkeSU" "ApkeSU"
+              fi
               ;;
             *)
               echo "::error::未知 KernelSU 变体: ${{ inputs.kernelsu_variant }}"
