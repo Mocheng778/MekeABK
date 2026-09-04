@@ -47,7 +47,6 @@ on:
         default: "r11"
 
       # ==================== KernelSU 配置 ====================
-            # ==================== KernelSU 配置 ====================
       kernelsu_variant:
         description: "KernelSU 变体"
         required: true
@@ -69,7 +68,6 @@ on:
           - Latest(最新)
           - Custom(自定义)
         default: Stable(标准)
-
 
       # ==================== 可选配置 ====================
       custom_ref:
