@@ -1,7 +1,8 @@
 <div align="center">
 
-# ABK
-
+# MekeABK
+这个是ABK分支自己研究不分享，自己使用，就增加了一个ApkeSU管理器适配
+如果你们不小心进入了我仓库链接这边提供了作者的连接你们下载就好，希望你们理解一下
 **AnyBase Kernel**
 
 用于构建、分发和管理 GKI KernelSU / SUSFS 内核的自动化仓库与 Android 应用。
