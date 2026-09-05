@@ -1308,13 +1308,20 @@ jobs:
                 echo "::warning::未找到 ApkeSU uapi 源(uapi_src=$APKE_UAPI_SRC) 或内核目录(kroot=$APKE_KROOT)"
               fi
               # 修复 ApkeSU Kbuild 在 GKI bazel 下 include 路径解析失败导致 ksu.h 声明未生效
-              for _f in "feature/kernel_umount.c" "runtime/ksud_integration.c"; do
-                _c="$APKE_KROOT/drivers/kernelsu/$_f"
-                if [ -f "$_c" ] && ! grep -q "extern struct cred .*ksu_cred" "$_c"; then
-                  sed -i '/^#include "ksu.h"/a extern struct cred *ksu_cred;' "$_c"
-                  echo "已为 $_f 补充 ksu_cred 声明"
+              # 自动扫描所有 .c 文件，谁用了 ksu_cred 就给谁补声明
+              find "$APKE_KROOT/drivers/kernelsu" -name "*.c" -type f | while read _c; do
+                if grep -q "ksu_cred" "$_c" && ! grep -q "extern struct cred .*ksu_cred" "$_c"; then
+                  if grep -q '#include "ksu.h"' "$_c"; then
+                    sed -i '/^#include "ksu.h"/a extern struct cred *ksu_cred;' "$_c"
+                    echo "已为 $(basename $_c) 补充 ksu_cred 声明"
+                  else
+                    # 没有 include ksu.h 的文件，在第一个 include 后插入
+                    sed -i '0,/^#include/s/^#include.*/&\nextern struct cred *ksu_cred;/' "$_c"
+                    echo "已为 $(basename $_c) 补充 ksu_cred 声明(无ksu.h)"
+                  fi
                 fi
               done
+              # 同时确保 ksu.h 可被找到：创建符号链接
               if [ -d "$APKE_KROOT/drivers/kernelsu/include" ] && [ ! -e "$APKE_KROOT/drivers/kernelsu/ksu.h" ]; then
                 ln -sf include/ksu.h "$APKE_KROOT/drivers/kernelsu/ksu.h"
                 echo "已创建 drivers/kernelsu/ksu.h 符号链接"
