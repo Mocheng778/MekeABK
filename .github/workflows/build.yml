@@ -1291,39 +1291,37 @@ jobs:
             "ApkeSU")
               echo "添加 ApkeSU..."
               curl -LSs "https://raw.githubusercontent.com/fixz232/ApkeSU/master/kernel/setup.sh" | bash -s $BRANCH
-              # ApkeSU setup.sh 用符号链接集成，uapi 头文件在源码根目录(KernelSU/uapi)而非 kernel/ 内
-              APKE_UAPI_SRC=""
-              APKE_KROOT=""
-              for _s in "$KERNEL_ROOT/KernelSU/uapi" "$KERNEL_ROOT/ApkeSU/uapi" "$KERNEL_ROOT/common/drivers/kernelsu/uapi" "drivers/kernelsu/uapi"; do
-                if [ -d "$_s" ]; then APKE_UAPI_SRC="$_s"; break; fi
-              done
-              for _d in "$KERNEL_ROOT/common" "$KERNEL_ROOT" "."; do
-                if [ -d "$_d/drivers/kernelsu" ] || [ -f "$_d/Makefile" ]; then APKE_KROOT="$_d"; break; fi
-              done
-              if [ -n "$APKE_UAPI_SRC" ] && [ -n "$APKE_KROOT" ]; then
-                mkdir -p "$APKE_KROOT/include/uapi"
-                cp -rf "$APKE_UAPI_SRC/"* "$APKE_KROOT/include/uapi/"
-                echo "ApkeSU uapi: $APKE_UAPI_SRC -> $APKE_KROOT/include/uapi/"
-              else
-                echo "::warning::未找到 ApkeSU uapi 源(uapi_src=$APKE_UAPI_SRC) 或内核目录(kroot=$APKE_KROOT)"
-              fi
-                            # 根本修复：修改 Kbuild 强制添加 include 绝对路径
-              KBUILD_FILE="$APKE_KROOT/drivers/kernelsu/Kbuild"
-              if [ -f "$KBUILD_FILE" ]; then
-                if ! grep -q "ABK_KSU_INCLUDE_FIX" "$KBUILD_FILE"; then
-                  echo "" >> "$KBUILD_FILE"
-                  echo "# ABK_KSU_INCLUDE_FIX" >> "$KBUILD_FILE"
-                  echo "ccflags-y += -I${APKE_KROOT%/}/drivers/kernelsu/include" >> "$KBUILD_FILE"
-                  echo "已修复 Kbuild include 路径"
+              # 修复1: 复制 ApkeSU uapi 头文件到内核 include/uapi
+              APKE_UAPI_SRC=$(find . -path "*/KernelSU/uapi" -type d 2>/dev/null | head -1)
+              if [ -n "$APKE_UAPI_SRC" ]; then
+                APKE_INC_UAPI=$(find . -path "*/common/include/uapi" -type d 2>/dev/null | head -1)
+                if [ -z "$APKE_INC_UAPI" ]; then
+                  APKE_INC_UAPI=$(find . -path "*/include/uapi" -type d 2>/dev/null | head -1)
+                fi
+                if [ -n "$APKE_INC_UAPI" ]; then
+                  cp -rf "$APKE_UAPI_SRC/"* "$APKE_INC_UAPI/"
+                  echo "ApkeSU uapi: $APKE_UAPI_SRC -> $APKE_INC_UAPI"
                 fi
               fi
-              find -L "$APKE_KROOT/drivers/kernelsu" -name "*.c" -type f 2>/dev/null | while read _c; do
-                if grep -q "ksu_cred" "$_c" && ! grep -q "extern struct cred .*ksu_cred" "$_c"; then
-                  sed -i '1i extern struct cred *ksu_cred;' "$_c"
-                  echo "已为 $(basename $_c) 补充 ksu_cred 声明"
+              # 修复2: 修改 Kbuild 强制添加 include 绝对路径（解决 ksu_cred 未声明）
+              APKE_KBUILD=$(find . -path "*/drivers/kernelsu/Kbuild" 2>/dev/null | head -1)
+              if [ -n "$APKE_KBUILD" ]; then
+                APKE_KDIR=$(dirname "$APKE_KBUILD")
+                APKE_KDIR_ABS=$(cd "$APKE_KDIR" && pwd)
+                if ! grep -q "ABK_KSU_INCLUDE_FIX" "$APKE_KBUILD"; then
+                  echo "" >> "$APKE_KBUILD"
+                  echo "# ABK_KSU_INCLUDE_FIX" >> "$APKE_KBUILD"
+                  echo "ccflags-y += -I$APKE_KDIR_ABS/include" >> "$APKE_KBUILD"
+                  echo "已修复 Kbuild include: $APKE_KDIR_ABS/include"
                 fi
-              done
-
+                # 修复3: 给所有使用 ksu_cred 的 .c 文件补 extern 声明
+                find -L "$APKE_KDIR" -name "*.c" -type f 2>/dev/null | while read _c; do
+                  if grep -q "ksu_cred" "$_c" && ! grep -q "extern struct cred .*ksu_cred" "$_c"; then
+                    sed -i '1i extern struct cred *ksu_cred;' "$_c"
+                    echo "已补 ksu_cred 声明: $(basename $_c)"
+                  fi
+                done
+              fi
               ;;
           esac
 
