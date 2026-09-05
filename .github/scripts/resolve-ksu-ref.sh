@@ -236,7 +236,32 @@ resolve_latest() {
   esac
 
   case "$KSU_VARIANT" in
-    ApkeSU) source_branch="ApkeSU" ;;
+    ApkeSU)
+      # ApkeSU 没有 CI 构建，Latest 直接解析为 GitHub latest release 对应 commit
+      local release_json release_tag release_target resolved_sha
+      release_json="$(ksu_github_api_curl "https://api.github.com/repos/${repo}/releases/latest")"
+      release_tag="$(echo "$release_json" | jq -r '.tag_name // empty')"
+      release_target="$(echo "$release_json" | jq -r '.target_commitish // empty')"
+      if [ -n "$release_target" ] && [ "$release_target" != "null" ]; then
+        if [[ "$release_target" =~ ^[0-9a-f]{40}$ ]]; then
+          # 已经是完整 SHA
+          resolved_sha="$release_target"
+        else
+          # 是分支名，解析为 SHA
+          resolved_sha="$(ksu_github_api_curl "https://api.github.com/repos/${repo}/git/ref/heads/${release_target}" | jq -r '.object.sha // empty')"
+        fi
+        if [ -n "$resolved_sha" ] && [ "$resolved_sha" != "null" ]; then
+          KSU_RESOLVED_LATEST_SHA="$resolved_sha"
+          KSU_LATEST_SOURCE="latest-release-${release_tag}"
+          RESOLVED_KSU_REPO="$repo"
+          RESOLVED_KSU_SOURCE_BRANCH="${release_target}"
+          RESOLVED_KSU_SHA="$resolved_sha"
+          return 0
+        fi
+      fi
+      # 回退：用 master 分支 HEAD（ApkeSU stable 分支）
+      source_branch="master"
+      ;;
     *) source_branch="main" ;;
   esac
   if ! ksu_resolve_latest_sha "$repo" "$source_branch"; then
