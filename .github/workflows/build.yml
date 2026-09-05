@@ -1303,22 +1303,27 @@ jobs:
                   echo "ApkeSU uapi: $APKE_UAPI_SRC -> $APKE_INC_UAPI"
                 fi
               fi
-              # 修复2: 修改 Kbuild 强制添加 include 绝对路径（解决 ksu_cred 未声明）
-              APKE_KBUILD=$(find . -path "*/drivers/kernelsu/Kbuild" 2>/dev/null | head -1)
-              if [ -n "$APKE_KBUILD" ]; then
-                APKE_KDIR=$(dirname "$APKE_KBUILD")
+              # 修复2: 直接用已知路径 KernelSU/kernel 修改 Kbuild（不依赖find）
+              APKE_KDIR=""
+              for _d in "KernelSU/kernel" "common/drivers/kernelsu" "drivers/kernelsu"; do
+                if [ -f "$_d/Kbuild" ]; then
+                  APKE_KDIR="$_d"
+                  break
+                fi
+              done
+              if [ -n "$APKE_KDIR" ]; then
                 APKE_KDIR_ABS=$(cd "$APKE_KDIR" && pwd)
-                if ! grep -q "ABK_KSU_INCLUDE_FIX" "$APKE_KBUILD"; then
-                  echo "" >> "$APKE_KBUILD"
-                  echo "# ABK_KSU_INCLUDE_FIX" >> "$APKE_KBUILD"
-                  echo "ccflags-y += -I$APKE_KDIR_ABS/include" >> "$APKE_KBUILD"
+                if ! grep -q "ABK_KSU_INCLUDE_FIX" "$APKE_KDIR/Kbuild"; then
+                  echo "" >> "$APKE_KDIR/Kbuild"
+                  echo "# ABK_KSU_INCLUDE_FIX" >> "$APKE_KDIR/Kbuild"
+                  echo "ccflags-y += -I$APKE_KDIR_ABS/include" >> "$APKE_KDIR/Kbuild"
                   echo "已修复 Kbuild include: $APKE_KDIR_ABS/include"
                 fi
-                # 修复3: 给所有使用 ksu_cred 的 .c 文件补 extern 声明
-                find -L "$APKE_KDIR" -name "*.c" -type f 2>/dev/null | while read _c; do
+                # 修复3: 直接遍历 KernelSU/kernel 下所有 .c 文件补 ksu_cred
+                find -L "$APKE_KDIR_ABS" -name "*.c" -type f 2>/dev/null | while read _c; do
                   if grep -q "ksu_cred" "$_c" && ! grep -q "extern struct cred .*ksu_cred" "$_c"; then
                     sed -i '1i extern struct cred *ksu_cred;' "$_c"
-                    echo "已补 ksu_cred 声明: $(basename $_c)"
+                    echo "已补 ksu_cred: $(basename $_c)"
                   fi
                 done
               fi
