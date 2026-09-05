@@ -89,7 +89,7 @@ ksu_resolve_latest_sha() {
   KSU_LATEST_SOURCE=""
 
   main_head="$(ksu_main_head_sha "$repo" "$branch")" || {
-    echo "::error::Failed to read main HEAD for ${repo}" >&2
+    echo "::error::Failed to read ${branch} HEAD for ${repo}" >&2
     return 1
   }
 
@@ -167,14 +167,15 @@ GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 OFFICIAL_STABLE_REF="e6832ed548ada2fa16fcbd6c8e98bbd1868f4401"
 SUKISU_STABLE_REF="278d822a4ebd214bcfd774b7910cb11cdc560bb9"
 RESUKISU_STABLE_REF="2206a7dd71e600f34378c4c583244f46e7a35670"
+APKESU_STABLE_REF="70c6a36cdbff34ea86453b85075bba2edfc3a6f3"
 SUKISU_REPO="SukiSU-Ultra/SukiSU-Ultra"
 APKESU_REPO="fixz232/ApkeSU"
-APKESU_STABLE_REF="master"
+APKESU_DEFAULT_BRANCH="ApkeSU"
 
 OFFICIAL_DEV_REF="32e5ceb668e42348cd23e13fa4c28d60de29a4b5"
 SUKISU_DEV_REF="2af38be538502e43111d20f74b74dc160320cdbf"
 RESUKISU_DEV_REF="b44a2f881a0cfad6841dfee76db3aa6d20bdab16"
-APKESU_DEV_REF="ApkeSU"
+APKESU_DEV_REF="70c6a36cdbff34ea86453b85075bba2edfc3a6f3"
 
 emit_env() {
   local key="$1"
@@ -218,16 +219,20 @@ resolve_latest() {
   case "$KSU_VARIANT" in
     Official)
       repo="tiann/KernelSU"
+      source_branch="main"
       ;;
     SukiSU)
       # GKI builds use main; builtin is for OnePlus only (oneplus-build.yml, not resolve-ksu-ref).
       repo="$SUKISU_REPO"
+      source_branch="main"
       ;;
     ReSukiSU)
       repo="ReSukiSU/ReSukiSU"
+      source_branch="main"
       ;;
     ApkeSU)
       repo="$APKESU_REPO"
+      source_branch="$APKESU_DEFAULT_BRANCH"
       ;;
     *)
       echo "::error::Unknown KSU variant for Latest: ${KSU_VARIANT}" >&2
@@ -235,35 +240,6 @@ resolve_latest() {
       ;;
   esac
 
-  case "$KSU_VARIANT" in
-    ApkeSU)
-      # ApkeSU 没有 CI 构建，Latest 直接解析为 GitHub latest release 对应 commit
-      local release_json release_tag release_target resolved_sha
-      release_json="$(ksu_github_api_curl "https://api.github.com/repos/${repo}/releases/latest")"
-      release_tag="$(echo "$release_json" | jq -r '.tag_name // empty')"
-      release_target="$(echo "$release_json" | jq -r '.target_commitish // empty')"
-      if [ -n "$release_target" ] && [ "$release_target" != "null" ]; then
-        if [[ "$release_target" =~ ^[0-9a-f]{40}$ ]]; then
-          # 已经是完整 SHA
-          resolved_sha="$release_target"
-        else
-          # 是分支名，解析为 SHA
-          resolved_sha="$(ksu_github_api_curl "https://api.github.com/repos/${repo}/git/ref/heads/${release_target}" | jq -r '.object.sha // empty')"
-        fi
-        if [ -n "$resolved_sha" ] && [ "$resolved_sha" != "null" ]; then
-          KSU_RESOLVED_LATEST_SHA="$resolved_sha"
-          KSU_LATEST_SOURCE="latest-release-${release_tag}"
-          RESOLVED_KSU_REPO="$repo"
-          RESOLVED_KSU_SOURCE_BRANCH="${release_target}"
-          RESOLVED_KSU_SHA="$resolved_sha"
-          return 0
-        fi
-      fi
-      # 回退：用 master 分支 HEAD（ApkeSU stable 分支）
-      source_branch="master"
-      ;;
-    *) source_branch="main" ;;
-  esac
   if ! ksu_resolve_latest_sha "$repo" "$source_branch"; then
     return 1
   fi
