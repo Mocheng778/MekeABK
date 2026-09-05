@@ -377,7 +377,7 @@ jobs:
             cp "$WORKSPACE/susfs4oki/kernel_patches/50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch" "$COMMON_ROOT/" || true
             cp "$WORKSPACE"/susfs4oki/kernel_patches/fs/* "$COMMON_ROOT/fs/" || true
             cp "$WORKSPACE"/susfs4oki/kernel_patches/include/linux/* "$COMMON_ROOT/include/linux/" || true
-          elif [ "$KSU_VARIANT" = "SukiSU" ] || [ "$KSU_VARIANT" = "ReSukiSU" ]; then
+          elif [ "$KSU_VARIANT" = "SukiSU" ] || [ "$KSU_VARIANT" = "ReSukiSU" ] || [ "$KSU_VARIANT" = "ApkeSU" ]; then
             case "$KSU_VARIANT" in
               ReSukiSU)
                 MANUAL_HOOK_PATCH_NAME="scope_min_manual_hooks_v1.9.patch"
@@ -562,7 +562,7 @@ jobs:
           PY
 
       - name: 修复 SukiSU/ReSukiSU sulog 兼容
-        if: ${{ inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' }}
+        if: ${{ inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ApkeSU' || inputs.ksu_variant == 'ReSukiSU' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -645,7 +645,7 @@ jobs:
           PY
 
       - name: 修复 SukiSU/ReSukiSU android16-6.12 源码兼容
-        if: ${{ (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU') && inputs.android_version == 'android16' && inputs.kernel_version == '6.12' }}
+        if: ${{ (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ApkeSU' || inputs.ksu_variant == 'ReSukiSU') && inputs.android_version == 'android16' && inputs.kernel_version == '6.12' }}
         shell: bash
         run: |
           set -euo pipefail
