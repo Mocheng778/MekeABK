@@ -177,6 +177,7 @@ jobs:
               "official": "Official",
               "sukisu": "SukiSU",
               "resukisu": "ReSukiSU",
+              "apkesu": "ApkeSU",
               "none": "None",
           }
 

@@ -394,7 +394,7 @@ jobs:
           fi
 
           # Hook 类型
-          if [ "${{ inputs.kernelsu_variant }}" = "SukiSU" ] || [ "${{ inputs.kernelsu_variant }}" = "ReSukiSU" ] || [ "${{ inputs.kernelsu_variant }}" = "ApkeSU" ]; then
+          if [ "${{ inputs.kernelsu_variant }}" = "SukiSU" ] || [ "${{ inputs.kernelsu_variant }}" = "ReSukiSU" ]; then
             echo "HOOK_TYPE=SUSFS Inline Hooks" >> $GITHUB_ENV
           else
             echo "HOOK_TYPE=KPROBE Hooks" >> $GITHUB_ENV
@@ -447,7 +447,8 @@ jobs:
         run: |
           case "${{ inputs.kernelsu_variant }}" in
             "Official") BRANCH="main" ;;
-            "SukiSU"|"ReSukiSU"|"ApkeSU") BRANCH="main" ;;
+            "SukiSU"|"ReSukiSU") BRANCH="main" ;;
+            "ApkeSU") BRANCH="ApkeSU" ;;
             *) echo "错误: 未知变体" >&2; exit 1 ;;
           esac
           echo "KSU_BRANCH=$BRANCH" >> $GITHUB_ENV
@@ -460,6 +461,7 @@ jobs:
             "Official") REPO_URL="https://github.com/tiann/KernelSU.git"; REPO_URL2="tiann/KernelSU" ;;
             "SukiSU") REPO_URL="https://github.com/SukiSU-Ultra/SukiSU-Ultra.git"; REPO_URL2="SukiSU-Ultra/SukiSU-Ultra" ;;
             "ReSukiSU") REPO_URL="https://github.com/ReSukiSU/ReSukiSU.git"; REPO_URL2="ReSukiSU/ReSukiSU" ;;
+            "ApkeSU") REPO_URL="https://github.com/fixz232/ApkeSU.git"; REPO_URL2="fixz232/ApkeSU" ;;
           esac
 
           branch_input="${{ inputs.kernelsu_branch }}"
@@ -470,21 +472,25 @@ jobs:
           OFFICIAL_STABLE_REF="3f388ef137c78e1ca0c92c0ada3b8717cdcc4302"
           SUKISU_STABLE_REF="c5af9eadac43b1f0b9751471be78e6eef681554b"
           RESUKISU_STABLE_REF="3d790eaaabe9e7e33d938bbf836e0f247121e79e"
+          APKESU_STABLE_REF="70c6a36cdbff34ea86453b85075bba2edfc3a6f3"
 
           OFFICIAL_DEV_REF="$OFFICIAL_STABLE_REF"
           SUKISU_DEV_REF="$SUKISU_STABLE_REF"
           RESUKISU_DEV_REF="$RESUKISU_STABLE_REF"
+          APKESU_DEV_REF="$APKESU_STABLE_REF"
 
           case "$branch_input" in
             "Stable(标准)")
               OFFICIAL_REF="$OFFICIAL_STABLE_REF"
               SUKISU_REF="$SUKISU_STABLE_REF"
               RESUKISU_REF="$RESUKISU_STABLE_REF"
+              APKESU_REF="$APKESU_STABLE_REF"
               ;;
             "Dev(开发)")
               OFFICIAL_REF="$OFFICIAL_DEV_REF"
               SUKISU_REF="$SUKISU_DEV_REF"
               RESUKISU_REF="$RESUKISU_DEV_REF"
+              APKESU_REF="$APKESU_DEV_REF"
               ;;
             *) echo "错误: 未知 KSU 分支 $branch_input" >&2; exit 1 ;;
           esac
@@ -493,6 +499,7 @@ jobs:
             "Official") KSU_REF="$OFFICIAL_REF"; KSU_URL="https://github.com/$REPO_URL2/commit/$KSU_REF" ;;
             "SukiSU") KSU_REF="$SUKISU_REF"; KSU_URL="https://github.com/$REPO_URL2/commit/$KSU_REF" ;;
             "ReSukiSU") KSU_REF="$RESUKISU_REF"; KSU_URL="https://github.com/$REPO_URL2/commit/$KSU_REF" ;;
+            "ApkeSU") KSU_REF="$APKESU_REF"; KSU_URL="https://github.com/$REPO_URL2/commit/$KSU_REF" ;;
             *) echo "错误: 未知变体" >&2; exit 1 ;;
           esac
 
