@@ -221,12 +221,19 @@ jobs:
               download_manager_for_repo "ReSukiSU/ReSukiSU" "ReSukiSU"
               ;;
             "ApkeSU")
-              # ApkeSU: 优先从 release 下载管理器 APK，回退到 Actions build-manager
-              if [[ "$BRANCH" =~ ^[Vv]?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                download_tag_release_apk "fixz232/ApkeSU" "$BRANCH" "ApkeSU"
-              else
-                download_manager_for_repo "fixz232/ApkeSU" "ApkeSU"
+              # ApkeSU 管理器仅通过 GitHub Releases 发布，直接拉取 latest release APK
+              mkdir -p "manager-artifacts/ApkeSU"
+              APKESU_LATEST_URL="$(curl -fsSL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/fixz232/ApkeSU/releases/latest" \
+                | jq -r '.assets[] | select(.name | ascii_downcase | endswith(".apk")) | .browser_download_url' | head -1)"
+              if [ -z "$APKESU_LATEST_URL" ] || [ "$APKESU_LATEST_URL" = "null" ]; then
+                echo "::error::ApkeSU latest release 中未找到 APK 资源"
+                exit 1
               fi
+              APKESU_APK_NAME="$(basename "$APKESU_LATEST_URL")"
+              echo "下载 ApkeSU 管理器: $APKESU_APK_NAME"
+              curl -fL -o "manager-artifacts/ApkeSU/${APKESU_APK_NAME}" "$APKESU_LATEST_URL"
               ;;
             *)
               echo "::error::未知 KernelSU 变体: ${{ inputs.kernelsu_variant }}"
