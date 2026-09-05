@@ -50,10 +50,11 @@ ksu_workflow_run_id_for_branch() {
 
 ksu_main_head_sha() {
   local repo="$1"
+  local branch="${2:-main}"
   local sha
 
   KSU_API_REPO="$repo"
-  sha="$(ksu_github_api_curl "https://api.github.com/repos/${repo}/git/ref/heads/main" \
+  sha="$(ksu_github_api_curl "https://api.github.com/repos/${repo}/git/ref/heads/${branch}" \
     | jq -r '.object.sha // empty')"
   if [ -z "$sha" ] || [ "$sha" = "null" ]; then
     return 1
@@ -81,12 +82,13 @@ ksu_latest_build_manager_sha_on_branch() {
 # Sets KSU_RESOLVED_LATEST_SHA and KSU_LATEST_SOURCE (no stdout; safe under set -u).
 ksu_resolve_latest_sha() {
   local repo="$1"
+  local branch="${2:-main}"
   local main_head sha
 
   KSU_RESOLVED_LATEST_SHA=""
   KSU_LATEST_SOURCE=""
 
-  main_head="$(ksu_main_head_sha "$repo")" || {
+  main_head="$(ksu_main_head_sha "$repo" "$branch")" || {
     echo "::error::Failed to read main HEAD for ${repo}" >&2
     return 1
   }
@@ -103,8 +105,8 @@ ksu_resolve_latest_sha() {
     return 0
   fi
 
-  sha="$(ksu_latest_build_manager_sha_on_branch "$repo" "main" 1)" || {
-    echo "::error::No successful Release or build-manager run on ${repo}@main (required for Latest)" >&2
+  sha="$(ksu_latest_build_manager_sha_on_branch "$repo" "$branch" 1)" || {
+    echo "::error::No successful Release or build-manager run on ${repo}@${branch} (required for Latest)" >&2
     return 1
   }
   KSU_LATEST_SOURCE="main-fallback"
@@ -233,8 +235,11 @@ resolve_latest() {
       ;;
   esac
 
-  source_branch="main"
-  if ! ksu_resolve_latest_sha "$repo"; then
+  case "$KSU_VARIANT" in
+    ApkeSU) source_branch="ApkeSU" ;;
+    *) source_branch="main" ;;
+  esac
+  if ! ksu_resolve_latest_sha "$repo" "$source_branch"; then
     return 1
   fi
 
