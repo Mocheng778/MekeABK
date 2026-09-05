@@ -332,92 +332,92 @@ jobs:
               ApkeSU)
                 curl -LSs "https://raw.githubusercontent.com/fixz232/ApkeSU/master/kernel/setup.sh" | bash -s master
                 python3 - <<'PYFIX'
-                import os, shutil, re
+          import os, shutil, re
 
-                # === 1. 找到 ApkeSU kernel 目录 ===
-                kdir = None
-                for _d in ["KernelSU/kernel", "common/drivers/kernelsu", "drivers/kernelsu"]:
-                    if os.path.isfile(os.path.join(_d, "Kbuild")):
-                        kdir = _d
-                        break
-                if not kdir:
-                    print("未找到 ApkeSU kernel 目录，跳过修复")
-                    raise SystemExit(0)
-                kdir_abs = os.path.abspath(kdir)
-                print(f"ApkeSU kernel dir: {kdir_abs}")
+          # === 1. 找到 ApkeSU kernel 目录 ===
+          kdir = None
+          for _d in ["KernelSU/kernel", "common/drivers/kernelsu", "drivers/kernelsu"]:
+              if os.path.isfile(os.path.join(_d, "Kbuild")):
+                  kdir = _d
+                  break
+          if not kdir:
+              print("未找到 ApkeSU kernel 目录，跳过修复")
+              raise SystemExit(0)
+          kdir_abs = os.path.abspath(kdir)
+          print(f"ApkeSU kernel dir: {kdir_abs}")
 
-                # === 2. 复制 uapi 头文件 ===
-                uapi_src = None
-                for _root, _dirs, _files in os.walk("."):
-                    if _root.endswith("KernelSU/uapi") and os.path.isdir(_root):
-                        uapi_src = _root
-                        break
-                if uapi_src:
-                    uapi_dst = None
-                    for _root, _dirs, _files in os.walk("."):
-                        if _root.endswith("common/include/uapi"):
-                            uapi_dst = _root
-                            break
-                    if not uapi_dst:
-                        for _root, _dirs, _files in os.walk("."):
-                            if _root.endswith("include/uapi"):
-                                uapi_dst = _root
-                                break
-                    if uapi_dst:
-                        for _f in os.listdir(uapi_src):
-                            _s = os.path.join(uapi_src, _f)
-                            _d = os.path.join(uapi_dst, _f)
-                            if os.path.isdir(_s):
-                                shutil.copytree(_s, _d, dirs_exist_ok=True)
-                            else:
-                                shutil.copy2(_s, _d)
-                        print(f"uapi: {uapi_src} -> {uapi_dst}")
+          # === 2. 复制 uapi 头文件 ===
+          uapi_src = None
+          for _root, _dirs, _files in os.walk("."):
+              if _root.endswith("KernelSU/uapi") and os.path.isdir(_root):
+                  uapi_src = _root
+                  break
+          if uapi_src:
+              uapi_dst = None
+              for _root, _dirs, _files in os.walk("."):
+                  if _root.endswith("common/include/uapi"):
+                      uapi_dst = _root
+                      break
+              if not uapi_dst:
+                  for _root, _dirs, _files in os.walk("."):
+                      if _root.endswith("include/uapi"):
+                          uapi_dst = _root
+                          break
+              if uapi_dst:
+                  for _f in os.listdir(uapi_src):
+                      _s = os.path.join(uapi_src, _f)
+                      _d = os.path.join(uapi_dst, _f)
+                      if os.path.isdir(_s):
+                          shutil.copytree(_s, _d, dirs_exist_ok=True)
+                      else:
+                          shutil.copy2(_s, _d)
+                  print(f"uapi: {uapi_src} -> {uapi_dst}")
 
-                # === 3. 读取 ksu.h 完整内容，去掉头文件保护 ===
-                ksu_h_path = os.path.join(kdir_abs, "include", "ksu.h")
-                ksu_h_content = ""
-                if os.path.isfile(ksu_h_path):
-                    with open(ksu_h_path) as f:
-                        ksu_h_content = f.read()
-                    ksu_h_content = re.sub(r'#ifndef\s+__KSU_H_KSU\s*\n', '', ksu_h_content)
-                    ksu_h_content = re.sub(r'#define\s+__KSU_H_KSU\s*\n', '', ksu_h_content)
-                    ksu_h_content = re.sub(r'#endif\s*/\*.*?\*/\s*$', '', ksu_h_content, flags=re.MULTILINE)
-                    ksu_h_content = re.sub(r'#endif\s*$', '', ksu_h_content, flags=re.MULTILINE)
-                    ksu_h_content = ksu_h_content.strip()
-                    print(f"ksu.h 已读取 ({len(ksu_h_content)} bytes)")
-                else:
-                    print(f"警告: 未找到 ksu.h: {ksu_h_path}")
+          # === 3. 读取 ksu.h 完整内容，去掉头文件保护 ===
+          ksu_h_path = os.path.join(kdir_abs, "include", "ksu.h")
+          ksu_h_content = ""
+          if os.path.isfile(ksu_h_path):
+              with open(ksu_h_path) as f:
+                  ksu_h_content = f.read()
+              ksu_h_content = re.sub(r'#ifndef\s+__KSU_H_KSU\s*\n', '', ksu_h_content)
+              ksu_h_content = re.sub(r'#define\s+__KSU_H_KSU\s*\n', '', ksu_h_content)
+              ksu_h_content = re.sub(r'#endif\s*/\*.*?\*/\s*$', '', ksu_h_content, flags=re.MULTILINE)
+              ksu_h_content = re.sub(r'#endif\s*$', '', ksu_h_content, flags=re.MULTILINE)
+              ksu_h_content = ksu_h_content.strip()
+              print(f"ksu.h 已读取 ({len(ksu_h_content)} bytes)")
+          else:
+              print(f"警告: 未找到 ksu.h: {ksu_h_path}")
 
-                # === 4. 把 ksu.h 内容注入到每个 .c 文件的 #include 块之后 ===
-                if ksu_h_content:
-                    _header = f"/* ABK_KSU_H_INJECT */\n{ksu_h_content}\n/* END ABK_KSU_H_INJECT */\n\n"
-                    _count = 0
-                    for _root, _dirs, _files in os.walk(kdir_abs):
-                        for _f in _files:
-                            if not _f.endswith(".c"):
-                                continue
-                            _fp = os.path.join(_root, _f)
-                            try:
-                                _lines = open(_fp).readlines()
-                            except Exception:
-                                continue
-                            _text = "".join(_lines)
-                            if "ABK_KSU_H_INJECT" in _text:
-                                continue
-                            _last_inc = -1
-                            for _i, _line in enumerate(_lines):
-                                if _line.strip().startswith("#include"):
-                                    _last_inc = _i
-                            if _last_inc >= 0:
-                                _lines.insert(_last_inc + 1, _header)
-                            else:
-                                _lines.insert(0, _header)
-                            open(_fp, "w").write("".join(_lines))
-                            _count += 1
-                            print(f"注入 ksu.h: {_f}")
-                    print(f"共注入 {_count} 个文件")
-                else:
-                    print("ksu.h 为空，跳过注入")
+          # === 4. 把 ksu.h 内容注入到每个 .c 文件的 #include 块之后 ===
+          if ksu_h_content:
+              _header = f"/* ABK_KSU_H_INJECT */\n{ksu_h_content}\n/* END ABK_KSU_H_INJECT */\n\n"
+              _count = 0
+              for _root, _dirs, _files in os.walk(kdir_abs):
+                  for _f in _files:
+                      if not _f.endswith(".c"):
+                          continue
+                      _fp = os.path.join(_root, _f)
+                      try:
+                          _lines = open(_fp).readlines()
+                      except Exception:
+                          continue
+                      _text = "".join(_lines)
+                      if "ABK_KSU_H_INJECT" in _text:
+                          continue
+                      _last_inc = -1
+                      for _i, _line in enumerate(_lines):
+                          if _line.strip().startswith("#include"):
+                              _last_inc = _i
+                      if _last_inc >= 0:
+                          _lines.insert(_last_inc + 1, _header)
+                      else:
+                          _lines.insert(0, _header)
+                      open(_fp, "w").write("".join(_lines))
+                      _count += 1
+                      print(f"注入 ksu.h: {_f}")
+              print(f"共注入 {_count} 个文件")
+          else:
+              print("ksu.h 为空，跳过注入")
           PYFIX
                 ;;
               *)
