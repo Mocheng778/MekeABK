@@ -347,23 +347,22 @@ jobs:
                 else
                   echo "::warning::未找到 ApkeSU uapi 源(uapi_src=$APKE_UAPI_SRC) 或内核目录(kroot=$APKE_KROOT)"
                 fi
-                # 修复 ApkeSU Kbuild include 路径解析失败导致 ksu_cred 未声明
-                # 自动扫描所有 .c 文件，谁用了 ksu_cred 就给谁补声明
-                find "$APKE_KROOT/drivers/kernelsu" -name "*.c" -type f | while read _c; do
+                                # 根本修复：修改 Kbuild 强制添加 include 绝对路径
+                KBUILD_FILE="$APKE_KROOT/drivers/kernelsu/Kbuild"
+                if [ -f "$KBUILD_FILE" ]; then
+                  if ! grep -q "ABK_KSU_INCLUDE_FIX" "$KBUILD_FILE"; then
+                    echo "" >> "$KBUILD_FILE"
+                    echo "# ABK_KSU_INCLUDE_FIX" >> "$KBUILD_FILE"
+                    echo "ccflags-y += -I${APKE_KROOT%/}/drivers/kernelsu/include" >> "$KBUILD_FILE"
+                    echo "已修复 Kbuild include 路径"
+                  fi
+                fi
+                find -L "$APKE_KROOT/drivers/kernelsu" -name "*.c" -type f 2>/dev/null | while read _c; do
                   if grep -q "ksu_cred" "$_c" && ! grep -q "extern struct cred .*ksu_cred" "$_c"; then
-                    if grep -q '#include "ksu.h"' "$_c"; then
-                      sed -i '/^#include "ksu.h"/a extern struct cred *ksu_cred;' "$_c"
-                      echo "已为 $(basename $_c) 补充 ksu_cred 声明"
-                    else
-                      sed -i '0,/^#include/s/^#include.*/&\nextern struct cred *ksu_cred;/' "$_c"
-                      echo "已为 $(basename $_c) 补充 ksu_cred 声明(无ksu.h)"
-                    fi
+                    sed -i '1i extern struct cred *ksu_cred;' "$_c"
+                    echo "已为 $(basename $_c) 补充 ksu_cred 声明"
                   fi
                 done
-                if [ -d "$APKE_KROOT/drivers/kernelsu/include" ] && [ ! -e "$APKE_KROOT/drivers/kernelsu/ksu.h" ]; then
-                  ln -sf include/ksu.h "$APKE_KROOT/drivers/kernelsu/ksu.h"
-                  echo "已创建 drivers/kernelsu/ksu.h 符号链接"
-                fi
                 ;;
               *)
                 echo "::error::未知 KSU 变体: $KSU_VARIANT"
