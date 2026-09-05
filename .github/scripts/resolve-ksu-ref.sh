@@ -166,10 +166,13 @@ OFFICIAL_STABLE_REF="e6832ed548ada2fa16fcbd6c8e98bbd1868f4401"
 SUKISU_STABLE_REF="278d822a4ebd214bcfd774b7910cb11cdc560bb9"
 RESUKISU_STABLE_REF="2206a7dd71e600f34378c4c583244f46e7a35670"
 SUKISU_REPO="SukiSU-Ultra/SukiSU-Ultra"
+APKESU_REPO="fixz232/ApkeSU"
+APKESU_STABLE_REF="main"
 
 OFFICIAL_DEV_REF="32e5ceb668e42348cd23e13fa4c28d60de29a4b5"
 SUKISU_DEV_REF="2af38be538502e43111d20f74b74dc160320cdbf"
 RESUKISU_DEV_REF="b44a2f881a0cfad6841dfee76db3aa6d20bdab16"
+APKESU_DEV_REF="main"
 
 emit_env() {
   local key="$1"
@@ -221,6 +224,9 @@ resolve_latest() {
     ReSukiSU)
       repo="ReSukiSU/ReSukiSU"
       ;;
+    ApkeSU)
+      repo="$APKESU_REPO"
+      ;;
     *)
       echo "::error::Unknown KSU variant for Latest: ${KSU_VARIANT}" >&2
       exit 1
@@ -240,6 +246,7 @@ resolve_latest() {
 OFFICIAL_CUSTOM_REF=""
 SUKISU_CUSTOM_REF=""
 RESUKISU_CUSTOM_REF=""
+APKESU_CUSTOM_REF=""
 
 if [ "$KSU_BRANCH" = "Custom(自定义)" ]; then
   if [[ "$CUSTOM_REF" =~ ^([A-Za-z0-9._/-]+):([0-9]+)$ ]]; then
@@ -249,16 +256,19 @@ if [ "$KSU_BRANCH" = "Custom(自定义)" ]; then
       Official) OFFICIAL_CUSTOM_REF="$(get_success_action_sha "tiann/KernelSU" "$branch" "$nabe")" ;;
       SukiSU) SUKISU_CUSTOM_REF="$(get_success_action_sha "$SUKISU_REPO" "$branch" "$nabe")" ;;
       ReSukiSU) RESUKISU_CUSTOM_REF="$(get_success_action_sha "ReSukiSU/ReSukiSU" "$branch" "$nabe")" ;;
+      ApkeSU) APKESU_CUSTOM_REF="$(get_success_action_sha "$APKESU_REPO" "$branch" "$nabe")" ;;
     esac
   else
     case "$KSU_VARIANT" in
       Official) check_ref "tiann/KernelSU" "$CUSTOM_REF" ;;
       SukiSU) check_ref "$SUKISU_REPO" "$CUSTOM_REF" ;;
       ReSukiSU) check_ref "ReSukiSU/ReSukiSU" "$CUSTOM_REF" ;;
+      ApkeSU) check_ref "$APKESU_REPO" "$CUSTOM_REF" ;;
     esac
     OFFICIAL_CUSTOM_REF="$CUSTOM_REF"
     SUKISU_CUSTOM_REF="$CUSTOM_REF"
     RESUKISU_CUSTOM_REF="$CUSTOM_REF"
+    APKESU_CUSTOM_REF="$CUSTOM_REF"
   fi
 fi
 
@@ -267,22 +277,26 @@ case "$KSU_BRANCH" in
     OFFICIAL_REF="$OFFICIAL_STABLE_REF"
     SUKISU_REF="$SUKISU_STABLE_REF"
     RESUKISU_REF="$RESUKISU_STABLE_REF"
+    APKESU_REF="$APKESU_STABLE_REF"
     ;;
   "Dev(开发)")
     OFFICIAL_REF="$OFFICIAL_DEV_REF"
     SUKISU_REF="$SUKISU_DEV_REF"
     RESUKISU_REF="$RESUKISU_DEV_REF"
+    APKESU_REF="$APKESU_DEV_REF"
     ;;
   "Latest(最新)")
     resolve_latest
     OFFICIAL_REF="$RESOLVED_KSU_SHA"
     SUKISU_REF="$RESOLVED_KSU_SHA"
     RESUKISU_REF="$RESOLVED_KSU_SHA"
+    APKESU_REF="$RESOLVED_KSU_SHA"
     ;;
   "Custom(自定义)")
     OFFICIAL_REF="$OFFICIAL_CUSTOM_REF"
     SUKISU_REF="$SUKISU_CUSTOM_REF"
     RESUKISU_REF="$RESUKISU_CUSTOM_REF"
+    APKESU_REF="$APKESU_CUSTOM_REF"
     ;;
   *)
     echo "::error::Unknown KSU branch: ${KSU_BRANCH}" >&2
@@ -302,6 +316,10 @@ case "$KSU_VARIANT" in
   ReSukiSU)
     BRANCH="${RESUKISU_REF}"
     RESOLVED_KSU_REPO="${RESOLVED_KSU_REPO:-ReSukiSU/ReSukiSU}"
+    ;;
+  ApkeSU)
+    BRANCH="${APKESU_REF}"
+    RESOLVED_KSU_REPO="${RESOLVED_KSU_REPO:-$APKESU_REPO}"
     ;;
   *)
     echo "::error::Unknown KSU variant: ${KSU_VARIANT}" >&2
