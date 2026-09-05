@@ -1339,7 +1339,6 @@ jobs:
               if os.path.isfile(ksu_h_path):
                   with open(ksu_h_path) as f:
                       ksu_h_content = f.read()
-                  # 去掉 #ifndef/#define/#endif 头文件保护
                   ksu_h_content = re.sub(r'#ifndef\s+__KSU_H_KSU\s*\n', '', ksu_h_content)
                   ksu_h_content = re.sub(r'#define\s+__KSU_H_KSU\s*\n', '', ksu_h_content)
                   ksu_h_content = re.sub(r'#endif\s*/\*.*?\*/\s*$', '', ksu_h_content, flags=re.MULTILINE)
@@ -1365,7 +1364,6 @@ jobs:
                           _text = "".join(_lines)
                           if "ABK_KSU_H_INJECT" in _text:
                               continue
-                          # 找到最后一个 #include 行
                           _last_inc = -1
                           for _i, _line in enumerate(_lines):
                               if _line.strip().startswith("#include"):
@@ -1380,7 +1378,7 @@ jobs:
                   print(f"共注入 {_count} 个文件")
               else:
                   print("ksu.h 为空，跳过注入")
-              PYFIX
+          PYFIX
               ;;
           esac
 
