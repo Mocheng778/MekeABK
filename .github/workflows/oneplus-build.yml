@@ -332,10 +332,16 @@ jobs:
               ApkeSU)
                 curl -LSs "https://raw.githubusercontent.com/fixz232/ApkeSU/master/kernel/setup.sh" | bash -s master
                 # ApkeSU setup.sh 用符号链接集成，需手动复制 uapi 头文件到内核 include 路径
-                if [ -d "drivers/kernelsu/uapi" ]; then
-                  mkdir -p include/uapi
-                  cp -rf drivers/kernelsu/uapi/* include/uapi/
-                  echo "ApkeSU uapi 头文件已复制到 include/uapi/"
+                APKE_KROOT=""
+                for _d in "$KERNEL_ROOT/common" "$KERNEL_ROOT" "."; do
+                  if [ -d "$_d/drivers/kernelsu/uapi" ]; then APKE_KROOT="$_d"; break; fi
+                done
+                if [ -n "$APKE_KROOT" ]; then
+                  mkdir -p "$APKE_KROOT/include/uapi"
+                  cp -rf "$APKE_KROOT/drivers/kernelsu/uapi/"* "$APKE_KROOT/include/uapi/"
+                  echo "ApkeSU uapi 头文件已复制到 $APKE_KROOT/include/uapi/"
+                else
+                  echo "::warning::未找到 drivers/kernelsu/uapi 目录，跳过 uapi 复制"
                 fi
                 ;;
               *)
