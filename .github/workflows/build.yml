@@ -1377,10 +1377,12 @@ jobs:
           #include <linux/stat.h>
           #include <linux/fs.h>
           #include <linux/security.h>
-          #include <linux/avc.h>
           #include <linux/slab.h>
           #include <linux/cred.h>
           #include <uapi/linux/reboot.h>
+
+          /* 前置声明，只用作指针参数不需要完整定义 */
+          struct av_decision;
 
           bool ksu_is_init_rc_hook_enabled(void) { return false; }
           bool ksu_is_input_hook_enabled(void) { return false; }
