@@ -331,6 +331,12 @@ jobs:
                 ;;
               ApkeSU)
                 curl -LSs "https://raw.githubusercontent.com/fixz232/ApkeSU/master/kernel/setup.sh" | bash -s master
+                # ApkeSU setup.sh 用符号链接集成，需手动复制 uapi 头文件到内核 include 路径
+                if [ -d "drivers/kernelsu/uapi" ]; then
+                  mkdir -p include/uapi
+                  cp -rf drivers/kernelsu/uapi/* include/uapi/
+                  echo "ApkeSU uapi 头文件已复制到 include/uapi/"
+                fi
                 ;;
               *)
                 echo "::error::未知 KSU 变体: $KSU_VARIANT"
