@@ -1290,7 +1290,7 @@ jobs:
               ;;
             "ApkeSU")
               echo "添加 ApkeSU..."
-              curl -LSs "https://raw.githubusercontent.com/fixz232/ApkeSU/main/kernel/setup.sh" | bash -s $BRANCH
+              curl -LSs "https://raw.githubusercontent.com/fixz232/ApkeSU/master/kernel/setup.sh" | bash -s $BRANCH
               ;;
           esac
 

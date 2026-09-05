@@ -330,7 +330,7 @@ jobs:
                 curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s main
                 ;;
               ApkeSU)
-                curl -LSs "https://raw.githubusercontent.com/fixz232/ApkeSU/main/kernel/setup.sh" | bash -s main
+                curl -LSs "https://raw.githubusercontent.com/fixz232/ApkeSU/master/kernel/setup.sh" | bash -s master
                 ;;
               *)
                 echo "::error::未知 KSU 变体: $KSU_VARIANT"
