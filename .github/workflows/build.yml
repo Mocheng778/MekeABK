@@ -1748,15 +1748,29 @@ jobs:
           resolve_susfs_fix_root() {
             local version="$1"
             local candidate
-            for candidate in \
-              "$KERNEL_PATCHES/wild/susfs_fix_patches/v${version}" \
-              "$KERNEL_PATCHES/wild/archived/susfs_fix_patches/v${version}" \
-              "$KERNEL_PATCHES/ksu/susfs_fix_patches/v${version}"; do
-              if [ -d "$candidate" ]; then
-                printf '%s\n' "$candidate"
-                return 0
-              fi
-            done
+            # wild/susfs_fix_patches 是为 SukiSU/ReSukiSU 设计的，
+            # ApkeSU/Official 基于 KernelSU 上游，不应应用这些补丁，
+            # 否则会移除 init.c 中的 syscall_hook_manager.h include 和 ksu_late_loaded 定义。
+            if [ "$ABK_KSU_VARIANT" = "SukiSU" ] || [ "$ABK_KSU_VARIANT" = "ReSukiSU" ]; then
+              for candidate in \
+                "$KERNEL_PATCHES/wild/susfs_fix_patches/v${version}" \
+                "$KERNEL_PATCHES/wild/archived/susfs_fix_patches/v${version}" \
+                "$KERNEL_PATCHES/ksu/susfs_fix_patches/v${version}"; do
+                if [ -d "$candidate" ]; then
+                  printf '%s\n' "$candidate"
+                  return 0
+                fi
+              done
+            else
+              # ApkeSU/Official/其他变体：只使用 ksu/susfs_fix_patches
+              for candidate in \
+                "$KERNEL_PATCHES/ksu/susfs_fix_patches/v${version}"; do
+                if [ -d "$candidate" ]; then
+                  printf '%s\n' "$candidate"
+                  return 0
+                fi
+              done
+            fi
             return 1
           }
 
