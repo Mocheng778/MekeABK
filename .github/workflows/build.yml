@@ -1717,6 +1717,12 @@ jobs:
 
           echo "已更新 get_ksu_version_full 模板: $VERSION_TEMPLATE"
 
+      - name: 确保 KernelSU UAPI 头文件
+        if: inputs.ksu_variant == 'Official' || inputs.ksu_variant == 'ApkeSU'
+        working-directory: ${{ env.KERNEL_ROOT }}
+        run: |
+          bash "$GITHUB_WORKSPACE/.github/scripts/ensure-kernelsu-uapi.sh" "$KERNEL_ROOT"
+
       - name: 应用 SUSFS 补丁
         if: inputs.enable_susfs && inputs.ksu_variant != 'None'
         env:
