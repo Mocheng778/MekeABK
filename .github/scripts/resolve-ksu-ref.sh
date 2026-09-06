@@ -114,11 +114,21 @@ ksu_resolve_latest_sha() {
   return 0
 }
 
+# Returns the default branch for a given KernelSU-variant repo.
+ksu_default_branch_for_repo() {
+  local repo="$1"
+  case "$repo" in
+    fixz232/ApkeSU) printf '%s\n' "ApkeSU" ;;
+    *) printf '%s\n' "main" ;;
+  esac
+}
+
 # Sets KSU_MANAGER_RUN_ID, MANAGER_RUN_SOURCE, and MANAGER_RUN_FALLBACK_MAIN (no stdout; safe under set -u).
 ksu_find_manager_run_id() {
   local repo="$1"
   local sha="$2"
   local run_id
+  local default_branch
 
   if ! [[ "$sha" =~ ^[A-Fa-f0-9]{40}$ ]]; then
     echo "::error::Manager download requires a 40-char commit SHA, got: ${sha}" >&2
@@ -141,15 +151,16 @@ ksu_find_manager_run_id() {
     return 0
   fi
 
-  echo "::notice::No successful build-manager or Release run for ${repo} at head_sha=${sha}; falling back to latest successful build-manager on main" >&2
-  if run_id="$(ksu_workflow_run_id_for_branch "$repo" "$KSU_BUILD_MANAGER_WORKFLOW" "main")"; then
-    MANAGER_RUN_SOURCE="fallback-main"
+  default_branch="$(ksu_default_branch_for_repo "$repo")"
+  echo "::notice::No successful build-manager or Release run for ${repo} at head_sha=${sha}; falling back to latest successful build-manager on ${default_branch}" >&2
+  if run_id="$(ksu_workflow_run_id_for_branch "$repo" "$KSU_BUILD_MANAGER_WORKFLOW" "$default_branch")"; then
+    MANAGER_RUN_SOURCE="fallback-${default_branch}"
     MANAGER_RUN_FALLBACK_MAIN=1
     KSU_MANAGER_RUN_ID="$run_id"
     return 0
   fi
 
-  echo "::error::No successful build-manager run for ${repo} on main either" >&2
+  echo "::error::No successful build-manager run for ${repo} on ${default_branch} either" >&2
   return 1
 }
 
