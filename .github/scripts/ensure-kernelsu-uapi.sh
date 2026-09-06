@@ -12,8 +12,14 @@ source_dir="$ksu_root/uapi"
 include_dir="$ksu_root/kernel/include/uapi"
 
 if [ ! -f "$source_dir/app_profile.h" ]; then
-  echo "::error::Official KernelSU UAPI source is incomplete: $source_dir/app_profile.h" >&2
-  exit 1
+  echo "::warning::$source_dir/app_profile.h not found (variant may not ship UAPI headers); downloading from Official KernelSU upstream."
+  mkdir -p "$source_dir"
+  if ! curl -fsSL -o "$source_dir/app_profile.h" \
+    "https://raw.githubusercontent.com/tiann/KernelSU/main/uapi/app_profile.h"; then
+    echo "::error::Failed to download Official KernelSU UAPI app_profile.h" >&2
+    exit 1
+  fi
+  echo "Downloaded Official KernelSU UAPI app_profile.h to $source_dir/"
 fi
 
 if [ ! -f "$include_dir/app_profile.h" ]; then
