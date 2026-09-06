@@ -186,6 +186,13 @@ jobs:
             curl -fL -o "manager-artifacts/${variant}/${apk_name}" "$apk_url"
             }
 
+          get_latest_release_tag() {
+            local repo="$1"
+            curl -fsSL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${repo}/releases/latest" | jq -r '.tag_name // empty'
+            }
+
           download_manager_for_repo() {
           local repo="$1"
           local variant="$2"
@@ -221,9 +228,14 @@ jobs:
               download_manager_for_repo "ReSukiSU/ReSukiSU" "ReSukiSU"
               ;;
             "ApkeSU")
-              if [[ "$BRANCH" =~ ^[Vv]?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                download_tag_release_apk "fixz232/ApkeSU" "$BRANCH" "ApkeSU"
+              # ApkeSU build-manager.yml has no CI runs; manager APK is published only via GitHub Releases.
+              # Always prefer latest release APK; fall back to CI only if release lookup fails.
+              APKESU_LATEST_TAG="$(get_latest_release_tag "fixz232/ApkeSU")"
+              if [ -n "$APKESU_LATEST_TAG" ] && [ "$APKESU_LATEST_TAG" != "null" ]; then
+                echo "ApkeSU latest release tag: $APKESU_LATEST_TAG"
+                download_tag_release_apk "fixz232/ApkeSU" "$APKESU_LATEST_TAG" "ApkeSU"
               else
+                echo "::warning::Could not fetch ApkeSU latest release tag; falling back to CI build-manager"
                 download_manager_for_repo "fixz232/ApkeSU" "ApkeSU"
               fi
               ;;
