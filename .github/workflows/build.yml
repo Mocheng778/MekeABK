@@ -1748,8 +1748,15 @@ jobs:
           resolve_susfs_fix_root() {
             local version="$1"
             local candidate
+            # ApkeSU 的 init.c 包含 ksu_lsm_hook_init/ksu_syscall_hook_manager_init 等 SukiSU 特征，
+            # 无论是 wild 还是 ksu/susfs_fix_patches 都会部分应用成功（删除头文件 include）但函数体替换失败，
+            # 导致隐式声明错误。因此 ApkeSU 完全跳过所有 SUSFS 修复补丁，仅依赖通用的 10_enable_susfs_for_ksu.patch。
+            if [ "$ABK_KSU_VARIANT" = "ApkeSU" ]; then
+              echo "::notice::ApkeSU 变体跳过 SUSFS 修复补丁（避免 init.c 部分应用导致编译错误）"
+              return 1
+            fi
             # wild/susfs_fix_patches 是为 SukiSU/ReSukiSU 设计的，
-            # ApkeSU/Official 基于 KernelSU 上游，不应应用这些补丁，
+            # Official 基于 KernelSU 上游，不应应用这些补丁，
             # 否则会移除 init.c 中的 syscall_hook_manager.h include 和 ksu_late_loaded 定义。
             if [ "$ABK_KSU_VARIANT" = "SukiSU" ] || [ "$ABK_KSU_VARIANT" = "ReSukiSU" ]; then
               for candidate in \
@@ -1762,7 +1769,7 @@ jobs:
                 fi
               done
             else
-              # ApkeSU/Official/其他变体：只使用 ksu/susfs_fix_patches
+              # Official/其他变体：只使用 ksu/susfs_fix_patches
               for candidate in \
                 "$KERNEL_PATCHES/ksu/susfs_fix_patches/v${version}"; do
                 if [ -d "$candidate" ]; then
@@ -1784,7 +1791,8 @@ jobs:
           fi
 
           SUSFS_KSU_FIX_ROOT=""
-          if [ -d "$KERNEL_PATCHES/ksu/susfs_fix_patches/v${SUSFS_FIX_VERSION}" ]; then
+          # ApkeSU 完全跳过 ksu/susfs_fix_patches（避免 init.c 部分应用导致编译错误）
+          if [ "$ABK_KSU_VARIANT" != "ApkeSU" ] && [ -d "$KERNEL_PATCHES/ksu/susfs_fix_patches/v${SUSFS_FIX_VERSION}" ]; then
             SUSFS_KSU_FIX_ROOT="$KERNEL_PATCHES/ksu/susfs_fix_patches/v${SUSFS_FIX_VERSION}"
           fi
 
@@ -3535,7 +3543,7 @@ jobs:
           fi
 
           kpm_config_supported="false"
-          if [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ]; then
+          if [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ApkeSU" ]; then
             if [ "$kpm_kconfig_ready" = "true" ] && [ -f "$kpm_kconfig_path" ]; then
               kpm_config_supported="true"
             else
@@ -3548,7 +3556,7 @@ jobs:
             fi
           fi
 
-          if [ "${{ inputs.use_kpm }}" == "true" ] && ! feature_disabled kpm && { [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ]; }; then
+          if [ "${{ inputs.use_kpm }}" == "true" ] && ! feature_disabled kpm && { [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ApkeSU" ]; }; then
             if [ "$kpm_config_supported" = "true" ]; then
               echo "CONFIG_KPM=y" >> "$DEFCONFIG"
               case "$kpm_kconfig_status" in
@@ -3566,7 +3574,7 @@ jobs:
               echo "::error::请求启用 KPM，但当前 ${{ inputs.ksu_variant }} 源码树仍未提供 config KPM。"
               exit 1
             fi
-          elif [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ]; then
+          elif [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ApkeSU" ]; then
             if [ "$kpm_config_supported" = "true" ]; then
               echo "# CONFIG_KPM is not set" >> "$DEFCONFIG"
               echo "检测到 KPM Kconfig，已显式关闭 CONFIG_KPM。"
@@ -5483,7 +5491,7 @@ jobs:
           python3 "$GITHUB_WORKSPACE/.github/scripts/fix_sukisu_susfs.py" "$KERNEL_ROOT"
 
       - name: 最终修复 SukiSU/ReSukiSU 源码兼容
-        if: inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ApkeSU' || inputs.ksu_variant == 'ReSukiSU'
+        if: inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU'
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: kernelsu
@@ -5644,7 +5652,7 @@ jobs:
           fi
 
       - name: 修复 SukiSU/ReSukiSU android16-6.12 源码兼容
-        if: (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ApkeSU' || inputs.ksu_variant == 'ReSukiSU') && inputs.android_version == 'android16' && inputs.kernel_version == '6.12'
+        if: (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU') && inputs.android_version == 'android16' && inputs.kernel_version == '6.12'
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: kernelsu
@@ -6070,6 +6078,12 @@ jobs:
             sed -i 's/BUILD_SYSTEM_DLKM=1/BUILD_SYSTEM_DLKM=0/' ./common/build.config.gki.aarch64
             sed -i '/MODULES_ORDER=android\/gki_aarch64_modules/d' ./common/build.config.gki.aarch64
             sed -i '/KMI_SYMBOL_LIST_STRICT_MODE/d' ./common/build.config.gki.aarch64
+
+            # 修复 system_dlkm.erofs.img 打包时的 UnicodeDecodeError
+            # mkfs.erofs 输出可能含非 UTF-8 字符，导致 build_image.py subprocess.communicate() 解码失败
+            export LANG=C.UTF-8
+            export LC_ALL=C
+            export PYTHONIOENCODING=utf-8
 
             if [ -f "build/build.sh" ]; then
               LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh CC="/usr/bin/ccache clang" || exit 1
