@@ -6110,10 +6110,51 @@ jobs:
               if [ "${{ inputs.kernel_version }}" = "6.12" ]; then
                 LTO_FLAG="--lto=none"
               fi
-              # 清理可能损坏的 bazel 缓存，避免 UploadManifest 路径解析错误
+              # 停止旧的 Bazel 服务器，确保新的 locale/JVM 编码设置生效
+              tools/bazel shutdown 2>/dev/null || true
+              # 彻底清理磁盘缓存（避免旧缓存中包含错误编码的中文路径）
+              rm -rf /home/runner/.cache/bazel 2>/dev/null || true
               tools/bazel clean --expunge 2>/dev/null || true
-              # 禁用远程缓存上传，避免 UploadManifest$DirectoryBuilder.visit 遍历目录时遇到无效路径
-              tools/bazel build --disk_cache=/home/runner/.cache/bazel --config=fast --noremote_upload_local_results --remote_cache= $LTO_FLAG $FRAG_FLAG //common:kernel_aarch64_dist || exit 1
+
+              # 修复 build_image.py 的 UnicodeDecodeError
+              # common.py 的 RunAndCheckOutput 调用 subprocess.Popen(encoding='utf-8')，
+              # mkfs.erofs 输出含非 UTF-8 字节(0x8e)时 communicate() 解码失败。
+              # 补丁：将 encoding='utf-8' 改为 encoding='utf-8', errors='replace'
+              BUILD_IMAGE_COMMON=""
+              for candidate in \
+                "prebuilts/kernel-build-tools/linux-x86/bin/build_image/common.py" \
+                "kernel-build-tools/linux-x86/bin/build_image/common.py"; do
+                if [ -f "$candidate" ]; then
+                  BUILD_IMAGE_COMMON="$candidate"
+                  break
+                fi
+              done
+              if [ -n "$BUILD_IMAGE_COMMON" ]; then
+                if grep -q "encoding='utf-8'" "$BUILD_IMAGE_COMMON" && ! grep -q "errors='replace'" "$BUILD_IMAGE_COMMON"; then
+                  sed -i "s/encoding='utf-8'/encoding='utf-8', errors='replace'/g" "$BUILD_IMAGE_COMMON"
+                  echo "已补丁 $BUILD_IMAGE_COMMON：添加 errors='replace'"
+                else
+                  echo "$BUILD_IMAGE_COMMON 无需补丁（已是 errors='replace' 或无 encoding='utf-8'）"
+                fi
+              else
+                echo "未找到 build_image/common.py，跳过 UnicodeDecodeError 修复"
+              fi
+
+              # 构建参数说明：
+              # --host_jvm_args: 确保 Bazel JVM 使用 UTF-8 处理中文路径
+              # --action_env: 确保 depmod/tar 等子进程使用 UTF-8 locale
+              # --noremote_upload_local_results --remote_cache=: 禁用远程缓存（避免缓存中的编码不匹配）
+              tools/bazel build \
+                --disk_cache=/home/runner/.cache/bazel \
+                --config=fast \
+                --host_jvm_args=-Dfile.encoding=UTF-8 \
+                --host_jvm_args=-Dsun.jnu.encoding=UTF-8 \
+                --action_env=LANG=C.UTF-8 \
+                --action_env=LC_ALL=C.UTF-8 \
+                --noremote_upload_local_results \
+                --remote_cache= \
+                $LTO_FLAG $FRAG_FLAG \
+                //common:kernel_aarch64_dist || exit 1
               strings ./bazel-bin/common/kernel_aarch64/Image | grep 'Linux version'
             fi
 
