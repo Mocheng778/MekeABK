@@ -6085,6 +6085,10 @@ jobs:
             export LC_ALL=C
             export PYTHONIOENCODING=utf-8
 
+            # 修复 Bazel JVM 遇到非 UTF-8 文件名时的 InvalidPathException
+            # 内核模块安装目录中可能包含非 UTF-8 字符的文件名，导致 Bazel Java 进程崩溃
+            export JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8"
+
             if [ -f "build/build.sh" ]; then
               LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh CC="/usr/bin/ccache clang" || exit 1
               strings "out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist/Image" | grep 'Linux version'
@@ -6104,7 +6108,10 @@ jobs:
               if [ "${{ inputs.kernel_version }}" = "6.12" ]; then
                 LTO_FLAG="--lto=none"
               fi
-              tools/bazel build --disk_cache=/home/runner/.cache/bazel --config=fast $LTO_FLAG $FRAG_FLAG //common:kernel_aarch64_dist || exit 1
+              # 清理可能损坏的 bazel 缓存，避免 UploadManifest 路径解析错误
+              tools/bazel clean --expunge 2>/dev/null || true
+              # 禁用远程缓存上传，避免 UploadManifest$DirectoryBuilder.visit 遍历目录时遇到无效路径
+              tools/bazel build --disk_cache=/home/runner/.cache/bazel --config=fast --noremote_upload_local_results --remote_cache= $LTO_FLAG $FRAG_FLAG //common:kernel_aarch64_dist || exit 1
               strings ./bazel-bin/common/kernel_aarch64/Image | grep 'Linux version'
             fi
 
