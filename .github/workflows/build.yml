@@ -6121,14 +6121,20 @@ jobs:
               # mkfs.erofs 输出含非 UTF-8 字节(0x8e)时 communicate() 解码失败。
               # 补丁：将 encoding='utf-8' 改为 encoding='utf-8', errors='replace'
               BUILD_IMAGE_COMMON=""
+              # 先尝试已知路径
               for candidate in \
                 "prebuilts/kernel-build-tools/linux-x86/bin/build_image/common.py" \
-                "kernel-build-tools/linux-x86/bin/build_image/common.py"; do
+                "kernel-build-tools/linux-x86/bin/build_image/common.py" \
+                "prebuilts/kernel-build-tools/linux-x86/bin/build_image/build_image.py"; do
                 if [ -f "$candidate" ]; then
                   BUILD_IMAGE_COMMON="$candidate"
                   break
                 fi
               done
+              # 已知路径找不到时，用 find 搜索包含 RunAndCheckOutput 的 Python 文件
+              if [ -z "$BUILD_IMAGE_COMMON" ]; then
+                BUILD_IMAGE_COMMON=$(find . -name "*.py" -path "*build_image*" -exec grep -l "RunAndCheckOutput\|encoding=.utf-8" {} \; 2>/dev/null | head -1)
+              fi
               if [ -n "$BUILD_IMAGE_COMMON" ]; then
                 if grep -q "encoding='utf-8'" "$BUILD_IMAGE_COMMON" && ! grep -q "errors='replace'" "$BUILD_IMAGE_COMMON"; then
                   sed -i "s/encoding='utf-8'/encoding='utf-8', errors='replace'/g" "$BUILD_IMAGE_COMMON"
@@ -6137,18 +6143,19 @@ jobs:
                   echo "$BUILD_IMAGE_COMMON 无需补丁（已是 errors='replace' 或无 encoding='utf-8'）"
                 fi
               else
-                echo "未找到 build_image/common.py，跳过 UnicodeDecodeError 修复"
+                echo "未找到 build_image Python 文件，跳过 UnicodeDecodeError 修复"
               fi
 
               # 构建参数说明：
-              # --host_jvm_args: 确保 Bazel JVM 使用 UTF-8 处理中文路径
+              # --host_jvm_args 是 startup 选项，必须放在 bazel 和 build 之间
               # --action_env: 确保 depmod/tar 等子进程使用 UTF-8 locale
               # --noremote_upload_local_results --remote_cache=: 禁用远程缓存（避免缓存中的编码不匹配）
-              tools/bazel build \
-                --disk_cache=/home/runner/.cache/bazel \
-                --config=fast \
+              tools/bazel \
                 --host_jvm_args=-Dfile.encoding=UTF-8 \
                 --host_jvm_args=-Dsun.jnu.encoding=UTF-8 \
+                build \
+                --disk_cache=/home/runner/.cache/bazel \
+                --config=fast \
                 --action_env=LANG=C.UTF-8 \
                 --action_env=LC_ALL=C.UTF-8 \
                 --noremote_upload_local_results \
