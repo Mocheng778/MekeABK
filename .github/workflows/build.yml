@@ -6079,10 +6079,12 @@ jobs:
             sed -i '/MODULES_ORDER=android\/gki_aarch64_modules/d' ./common/build.config.gki.aarch64
             sed -i '/KMI_SYMBOL_LIST_STRICT_MODE/d' ./common/build.config.gki.aarch64
 
-            # 修复 system_dlkm.erofs.img 打包时的 UnicodeDecodeError
-            # mkfs.erofs 输出可能含非 UTF-8 字符，导致 build_image.py subprocess.communicate() 解码失败
+            # 修复编码相关问题：
+            # 1. system_dlkm.erofs.img 打包时的 UnicodeDecodeError（mkfs.erofs 输出非 UTF-8）
+            # 2. 内核模块目录含中文字符（如 6.6.89莫晨定制）时 depmod/Bazel 远程缓存找不到文件
+            # 注意：必须用 C.UTF-8 而非 C，否则 shell 工具（depmod/tar）无法处理中文路径
             export LANG=C.UTF-8
-            export LC_ALL=C
+            export LC_ALL=C.UTF-8
             export PYTHONIOENCODING=utf-8
 
             # 修复 Bazel JVM 遇到非 UTF-8 文件名时的 InvalidPathException
