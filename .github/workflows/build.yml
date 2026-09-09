@@ -1311,8 +1311,8 @@ jobs:
             echo "KSU_LATEST_COMMIT_DATE=未知" >> $GITHUB_ENV
           fi
 
-      - name: 修复 ReSukiSU SUSFS 源码兼容
-        if: inputs.ksu_variant == 'ReSukiSU' && inputs.enable_susfs
+      - name: 修复 SukiSU/ReSukiSU/ApkeSU SUSFS 源码兼容
+        if: (inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU') && inputs.enable_susfs
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: susfs
@@ -1320,9 +1320,9 @@ jobs:
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           set -euo pipefail
-          echo "ReSukiSU SUSFS compat cwd: $(pwd)"
+          echo "SukiSU/ReSukiSU/ApkeSU SUSFS compat cwd: $(pwd)"
 
-          python3 - <<'PY'
+          if ! python3 - <<'PY'
           from pathlib import Path
           import re
 
@@ -1534,14 +1534,14 @@ jobs:
           candidates = []
           seen = set()
           roots = [Path("KernelSU/kernel")]
-          if variant == "ReSukiSU":
+          if variant == "ReSukiSU" or variant == "ApkeSU":
               roots.extend([Path("common/drivers/kernelsu"), Path("drivers/kernelsu")])
 
           for base in roots:
               resolved = base.resolve()
               if resolved in seen:
                   continue
-              if variant == "ReSukiSU":
+              if variant == "ReSukiSU" or variant == "ApkeSU":
                   markers = ["Kbuild", "core/init.c", "feature/sucompat.c", "sulog/event.c"]
                   if any((base / marker).exists() for marker in markers):
                       candidates.append(base)
@@ -1551,8 +1551,8 @@ jobs:
                   seen.add(resolved)
 
           if not candidates:
-              if variant == "ReSukiSU":
-                  raise SystemExit("未找到实际 ReSukiSU 源码目录，无法应用 SUSFS 兼容修复")
+              if variant == "ReSukiSU" or variant == "ApkeSU":
+                  raise SystemExit(f"未找到实际 {variant} 源码目录，无法应用 SUSFS 兼容修复")
               raise SystemExit("未找到 KernelSU/kernel/ksu.c，无法应用 SukiSU/ReSukiSU SUSFS 兼容修复")
 
           for kernel_dir in candidates:
@@ -1659,6 +1659,13 @@ jobs:
                               print("Fixed SukiSU/ReSukiSU builtin sulog grant_root argv type for CONFIG_KSU_SUSFS")
                               break
           PY
+          then
+            if [ "${{ inputs.ksu_variant }}" == "ApkeSU" ]; then
+              echo "::warning::ApkeSU 的 SUSFS 源码兼容补丁存在不匹配项，已降级跳过（SUSFS 基础集成仍生效）"
+            else
+              exit 1
+            fi
+          fi
 
       - name: 配置 SukiSU 管理器信息
         if: inputs.ksu_variant == 'SukiSU'
@@ -1748,17 +1755,9 @@ jobs:
           resolve_susfs_fix_root() {
             local version="$1"
             local candidate
-            # ApkeSU 的 init.c 包含 ksu_lsm_hook_init/ksu_syscall_hook_manager_init 等 SukiSU 特征，
-            # 无论是 wild 还是 ksu/susfs_fix_patches 都会部分应用成功（删除头文件 include）但函数体替换失败，
-            # 导致隐式声明错误。因此 ApkeSU 完全跳过所有 SUSFS 修复补丁，仅依赖通用的 10_enable_susfs_for_ksu.patch。
-            if [ "$ABK_KSU_VARIANT" = "ApkeSU" ]; then
-              echo "::notice::ApkeSU 变体跳过 SUSFS 修复补丁（避免 init.c 部分应用导致编译错误）"
-              return 1
-            fi
-            # wild/susfs_fix_patches 是为 SukiSU/ReSukiSU 设计的，
-            # Official 基于 KernelSU 上游，不应应用这些补丁，
-            # 否则会移除 init.c 中的 syscall_hook_manager.h include 和 ksu_late_loaded 定义。
-            if [ "$ABK_KSU_VARIANT" = "SukiSU" ] || [ "$ABK_KSU_VARIANT" = "ReSukiSU" ]; then
+            # SukiSU/ReSukiSU/ApkeSU 同属 SukiSU 家族（init.c 均含 ksu_lsm_hook_init 等特征），
+            # 统一使用 wild + archived + ksu 全部 SUSFS 修复补丁
+            if [ "$ABK_KSU_VARIANT" = "SukiSU" ] || [ "$ABK_KSU_VARIANT" = "ReSukiSU" ] || [ "$ABK_KSU_VARIANT" = "ApkeSU" ]; then
               for candidate in \
                 "$KERNEL_PATCHES/wild/susfs_fix_patches/v${version}" \
                 "$KERNEL_PATCHES/wild/archived/susfs_fix_patches/v${version}" \
@@ -1791,8 +1790,7 @@ jobs:
           fi
 
           SUSFS_KSU_FIX_ROOT=""
-          # ApkeSU 完全跳过 ksu/susfs_fix_patches（避免 init.c 部分应用导致编译错误）
-          if [ "$ABK_KSU_VARIANT" != "ApkeSU" ] && [ -d "$KERNEL_PATCHES/ksu/susfs_fix_patches/v${SUSFS_FIX_VERSION}" ]; then
+          if [ -d "$KERNEL_PATCHES/ksu/susfs_fix_patches/v${SUSFS_FIX_VERSION}" ]; then
             SUSFS_KSU_FIX_ROOT="$KERNEL_PATCHES/ksu/susfs_fix_patches/v${SUSFS_FIX_VERSION}"
           fi
 
@@ -1907,14 +1905,26 @@ jobs:
               ;;
           esac
 
+          # 备份应用 10_enable_susfs_for_ksu.patch 后的 KernelSU 基础状态
+          # （SUSFS 修复补丁可能不匹配 SukiSU 家族变体的 init.c 结构，失败时可回滚到此状态）
+          SUSFS_BASE_BACKUP="$KERNEL_ROOT/.susfs_base_backup"
+          rm -rf "$SUSFS_BASE_BACKUP"
+          mkdir -p "$SUSFS_BASE_BACKUP"
+          for dir in KernelSU/kernel common/drivers/kernelsu drivers/kernelsu; do
+            if [ -d "$dir" ]; then
+              cp -r "$dir" "$SUSFS_BASE_BACKUP/$(basename "$dir")"
+            fi
+          done
+          echo "已备份 KernelSU 内核源码基础状态: $SUSFS_BASE_BACKUP"
+
           cd $KERNEL_ROOT/common
           patch -p1 < "50_add_susfs_in_gki-${ABK_ANDROID_VERSION}-${ABK_KERNEL_VERSION}.patch" || true
 
-          if [ "$ABK_KSU_VARIANT" == "SukiSU" ] || [ "$ABK_KSU_VARIANT" == "ReSukiSU" ]; then
+          if [ "$ABK_KSU_VARIANT" == "SukiSU" ] || [ "$ABK_KSU_VARIANT" == "ReSukiSU" ] || [ "$ABK_KSU_VARIANT" == "ApkeSU" ]; then
             SUSFS_C="./fs/susfs.c"
             if [ -f "$SUSFS_C" ] && grep -q '^static void susfs_run_sus_path_loop(' "$SUSFS_C"; then
               sed -i 's/^static void susfs_run_sus_path_loop(/void susfs_run_sus_path_loop(/' "$SUSFS_C"
-              echo "已导出 susfs_run_sus_path_loop 供 SukiSU/ReSukiSU LSM hook 调用"
+              echo "已导出 susfs_run_sus_path_loop 供 SukiSU/ReSukiSU/ApkeSU LSM hook 调用"
             fi
           fi
 
@@ -2398,6 +2408,25 @@ jobs:
             fi
 
             fix_task_mmu_vma_pad_start
+          fi
+
+          # SUSFS 修复补丁失败检测与回滚：
+          # SukiSU 家族（SukiSU/ReSukiSU/ApkeSU）的 init.c 结构存在差异，修复补丁可能部分应用失败。
+          # 若产生 .rej 文件，回滚到应用 10_enable_susfs_for_ksu.patch 后的基础状态，
+          # 保证 SUSFS 基础集成仍生效且不会因 init.c 不完整修改导致编译错误。
+          REJ_COUNT=$(find "$KERNEL_ROOT" -type f -name '*.rej' 2>/dev/null | wc -l)
+          if [ "$REJ_COUNT" -gt 0 ]; then
+            echo "::warning::SUSFS 修复补丁有 $REJ_COUNT 个文件应用失败，回滚 KernelSU 源码到基础状态"
+            for dir in KernelSU/kernel common/drivers/kernelsu drivers/kernelsu; do
+              backup_dir="$SUSFS_BASE_BACKUP/$(basename "$dir")"
+              if [ -d "$backup_dir" ]; then
+                rm -rf "$dir"
+                cp -r "$backup_dir" "$dir"
+              fi
+            done
+            find "$KERNEL_ROOT" -type f -name '*.rej' -delete 2>/dev/null || true
+          else
+            echo "SUSFS 修复补丁全部应用成功"
           fi
 
       - name: 确保 SUSFS Kconfig 与核心对象
@@ -5479,8 +5508,8 @@ jobs:
               print(f"{path} 的 Official 6.1-6.12 SELinux 导出已满足要求")
           PY
 
-      - name: 补齐 SukiSU SUSFS 内联 hook 符号
-        if: inputs.ksu_variant == 'SukiSU' && inputs.enable_susfs
+      - name: 补齐 SukiSU/ReSukiSU/ApkeSU SUSFS 内联 hook 符号
+        if: (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ApkeSU') && inputs.enable_susfs
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: susfs
@@ -5488,10 +5517,16 @@ jobs:
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           set -euo pipefail
-          python3 "$GITHUB_WORKSPACE/.github/scripts/fix_sukisu_susfs.py" "$KERNEL_ROOT"
+          if ! python3 "$GITHUB_WORKSPACE/.github/scripts/fix_sukisu_susfs.py" "$KERNEL_ROOT"; then
+            if [ "${{ inputs.ksu_variant }}" == "ApkeSU" ]; then
+              echo "::warning::ApkeSU 的 fix_sukisu_susfs 补丁存在不匹配项，已降级跳过（SUSFS 基础集成仍生效）"
+            else
+              exit 1
+            fi
+          fi
 
-      - name: 最终修复 SukiSU/ReSukiSU 源码兼容
-        if: inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU'
+      - name: 最终修复 SukiSU/ReSukiSU/ApkeSU 源码兼容
+        if: inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU'
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: kernelsu
@@ -5651,8 +5686,8 @@ jobs:
             fi
           fi
 
-      - name: 修复 SukiSU/ReSukiSU android16-6.12 源码兼容
-        if: (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU') && inputs.android_version == 'android16' && inputs.kernel_version == '6.12'
+      - name: 修复 SukiSU/ReSukiSU/ApkeSU android16-6.12 源码兼容
+        if: (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU') && inputs.android_version == 'android16' && inputs.kernel_version == '6.12'
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: kernelsu
