@@ -1155,13 +1155,13 @@ jobs:
             --feature "rekernel=$USE_REKERNEL"
           mkdir -p "$transaction_dir"
           if [ "$USE_KPM" = "true" ] &&
-            { [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "ReSukiSU" ]; }; then
+            { [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "ReSukiSU" ] && [ "$KSU_VARIANT" != "ApkeSU" ]; }; then
             python3 "$GITHUB_WORKSPACE/.github/scripts/custom-source-feature-status.py" mark \
               --file "$status_file" \
               --id kpm \
               --state skipped \
               --reason-code dependency_skipped \
-              --message "KPM requires the SukiSU or ReSukiSU KernelSU variant"
+              --message "KPM requires the SukiSU, ReSukiSU or ApkeSU KernelSU variant"
             touch "$transaction_dir/kpm.disabled"
           fi
           echo "ABK_CUSTOM_SOURCE_FEATURE_STATUS=$status_file" >> "$GITHUB_ENV"
@@ -2557,7 +2557,7 @@ jobs:
           print("SUSFS Kconfig 与核心链接契约校验通过")
           PY
 
-      - name: 注入 SukiSU/ReSukiSU KPM Kconfig
+      - name: 注入 SukiSU/ReSukiSU/ApkeSU KPM Kconfig
         if: inputs.use_kpm && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ApkeSU' || inputs.ksu_variant == 'ReSukiSU')
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
@@ -6208,7 +6208,7 @@ jobs:
             echo "当前 SUSFS 最新提交日期: ${SUSFS_LATEST_COMMIT_DATE}"
             echo "如果日期不同或相差过远则补丁失效、编译失败"
 
-      - name: 应用 KPM 补丁 (SukiSU/ReSukiSU)
+      - name: 应用 KPM 补丁 (SukiSU/ReSukiSU/ApkeSU)
         if: inputs.use_kpm && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ApkeSU' || inputs.ksu_variant == 'ReSukiSU')
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
