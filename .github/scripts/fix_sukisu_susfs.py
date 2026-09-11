@@ -67,7 +67,10 @@ int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
             die("missing sucompat stat prototype")
         text = text.replace(old, new, 1)
 
-    if modern_stat and "int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv," not in text:
+    # ApkeSU 的 sucompat.h 本身就是 modern 完整版（已有 long ksu_handle_execveat_sucompat 声明），
+    # 若再添加 legacy compat 块会导致类型冲突（int vs long 同函数名）。检测到 modern execveat 声明则跳过。
+    modern_execveat = "long ksu_handle_execveat_sucompat(const char __user **filename_user, int orig_nr, struct pt_regs *regs);" in text
+    if modern_stat and not modern_execveat and "int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv," not in text:
         marker = "long ksu_handle_execve_sucompat(const char __user **filename_user, int orig_nr, struct pt_regs *regs);"
         if marker not in text:
             die("missing modern sucompat execve marker")
@@ -202,7 +205,10 @@ int ksu_handle_stat(int *dfd, struct filename **filename, int *flags)
 #endif"""
         text = text[: match.start(1)] + new_func + text[match.end(1) :]
 
-    if modern_layout and "int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv," not in text:
+    # ApkeSU 的 sucompat.c 本身已是 modern 完整版（已有 long ksu_handle_execveat_sucompat 定义），
+    # 再插入 legacy compat-wrapper 会导致同函数名类型冲突。检测到 modern execveat 定义则跳过。
+    modern_execveat_def = "long ksu_handle_execveat_sucompat(const char __user **filename_user, int orig_nr, struct pt_regs *regs)" in text
+    if modern_layout and not modern_execveat_def and "int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv," not in text:
         marker = "\n// sucompat: permitted process can execute 'su' to gain root access.\n"
         if marker not in text:
             die(f"missing modern sucompat compat-wrapper anchor: {path}")
