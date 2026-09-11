@@ -2457,6 +2457,86 @@ jobs:
             done
           fi
 
+      - name: 桥接 ApkeSU SUSFS 符号（回滚后恢复导出）
+        if: inputs.enable_susfs && inputs.ksu_variant == 'ApkeSU'
+        working-directory: ${{ env.KERNEL_ROOT }}
+        run: |
+          set -euo pipefail
+          python3 - "$KERNEL_ROOT" <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          root = Path(sys.argv[1]).resolve()
+          # 定位 KernelSU/kernel（回滚后原始源码，10_enable 对 selinux_hide.c/selinux.c 的
+          # 符号导出修改已被回滚删除；security/selinux/*.c 由 50_add 补丁引用这些符号）
+          ksu_dir = None
+          for cand in [root / "KernelSU/kernel", root / "common/drivers/kernelsu",
+                       root / "drivers/kernelsu", root / "kernel"]:
+              if (cand / "Kbuild").exists():
+                  ksu_dir = cand
+                  break
+          if ksu_dir is None:
+              print("未找到 KernelSU 编译目录，跳过 SUSFS 符号桥接")
+              sys.exit(0)
+          print(f"KSU 编译目录: {ksu_dir}")
+
+          # Part 1: selinux_hide.c 去 static（与 10_enable_susfs_for_ksu.patch 的导出一致）
+          sh = ksu_dir / "feature/selinux_hide.c"
+          if sh.exists():
+              t = sh.read_text()
+              replaces = [
+                  ("static bool ksu_selinux_hide_enabled", "bool ksu_selinux_hide_enabled"),
+                  ("static bool ksu_selinux_hide_running", "bool ksu_selinux_hide_running"),
+                  ("static write_op_fn *selinux_write_op", "write_op_fn *selinux_write_op"),
+                  ("static struct selinux_state fake_state", "struct selinux_state fake_state"),
+                  ("static DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key)", "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key)"),
+                  ("static struct page *fake_status = NULL", "struct page *fake_status = NULL"),
+                  ("static void initialize_fake_status()", "void initialize_fake_status()"),
+              ]
+              done = []
+              for old, new in replaces:
+                  if old in t:
+                      t = t.replace(old, new, 1)
+                      done.append(old)
+              if done:
+                  sh.write_text(t)
+                  print(f"已导出 selinux_hide.c 符号: {len(done)}")
+                  for d in done:
+                      print(f"  - {d}")
+              else:
+                  print("selinux_hide.c 符号已导出或无需修改")
+
+          # Part 2: selinux/selinux.c 添加 susfs_ksu_sid / susfs_priv_app_sid 定义
+          sc = ksu_dir / "selinux/selinux.c"
+          if sc.exists():
+              t = sc.read_text()
+              if "susfs_ksu_sid" not in t:
+                  add = "\n/* SUSFS: KSU selinux sid bridges (ABK ApkeSU) */\n" \
+                        "u32 susfs_ksu_sid __read_mostly = 0;\n" \
+                        "u32 susfs_priv_app_sid __read_mostly = 0;\n"
+                  sc.write_text(t.rstrip() + "\n" + add)
+                  print("已添加 susfs_ksu_sid / susfs_priv_app_sid 定义")
+              else:
+                  print("selinux/selinux.c 已有 susfs sid")
+
+          # 验证：所有被 security/selinux 引用的符号必须非 static
+          if sh.exists():
+              t = sh.read_text()
+              check = {
+                  "ksu_selinux_hide_enabled": r"(?m)^\s*static\s+bool\s+ksu_selinux_hide_enabled",
+                  "ksu_selinux_hide_running": r"(?m)^\s*static\s+bool\s+ksu_selinux_hide_running",
+                  "fake_state": r"(?m)^\s*static\s+struct\s+selinux_state\s+fake_state",
+                  "fake_status": r"(?m)^\s*static\s+struct\s+page\s+\*fake_status",
+                  "initialize_fake_status": r"(?m)^\s*static\s+void\s+initialize_fake_status",
+              }
+              bad = [k for k, pat in check.items() if re.search(pat, t)]
+              if bad:
+                  print(f"::error::SUSFS 符号仍为 static: {bad}")
+                  sys.exit(1)
+              print("SUSFS 符号桥接验证通过")
+          PY
+
       - name: 确保 SUSFS Kconfig 与核心对象
         if: inputs.enable_susfs && inputs.ksu_variant != 'None'
         env:
