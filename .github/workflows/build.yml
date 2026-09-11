@@ -1872,6 +1872,23 @@ jobs:
           cp $SUSFS4KSU/kernel_patches/fs/* ./common/fs/
           cp $SUSFS4KSU/kernel_patches/include/linux/* ./common/include/linux/
 
+          # 备份未打任何 SUSFS 补丁的 KernelSU 原始源码
+          # （10_enable/修复补丁可能不匹配 SukiSU 家族变体（含 ApkeSU）的 init.c 结构，
+          #   失败时回滚到此原始状态，保证编译通过；SUSFS 功能由独立步骤 + fix 脚本补齐）
+          SUSFS_BASE_BACKUP="$KERNEL_ROOT/.susfs_base_backup"
+          rm -rf "$SUSFS_BASE_BACKUP"
+          mkdir -p "$SUSFS_BASE_BACKUP"
+          # 使用绝对路径定位，备份名用唯一 key（避免 basename 冲突）
+          # 排除软链接（drivers/kernelsu 等通常是指向 KernelSU/kernel 的软链接）
+          for cand in "$KERNEL_ROOT/KernelSU/kernel" "$KERNEL_ROOT/common/drivers/kernelsu" "$KERNEL_ROOT/drivers/kernelsu"; do
+            if [ -d "$cand" ] && [ ! -L "$cand" ]; then
+              BACKUP_KEY=$(echo "$cand" | sed "s|$KERNEL_ROOT/||; s|/|_|g")
+              cp -r "$cand" "$SUSFS_BASE_BACKUP/$BACKUP_KEY"
+              echo "已备份原始 $cand -> $BACKUP_KEY"
+            fi
+          done
+          echo "已备份 KernelSU 内核源码原始状态: $SUSFS_BASE_BACKUP"
+
           case "$ABK_KSU_VARIANT" in
             "Official")
               cd ./KernelSU
@@ -1904,19 +1921,6 @@ jobs:
               cd ..
               ;;
           esac
-
-          # 备份应用 10_enable_susfs_for_ksu.patch 后的 KernelSU 基础状态
-          # （SUSFS 修复补丁可能不匹配 SukiSU 家族变体的 init.c 结构，失败时可回滚到此状态）
-          SUSFS_BASE_BACKUP="$KERNEL_ROOT/.susfs_base_backup"
-          rm -rf "$SUSFS_BASE_BACKUP"
-          mkdir -p "$SUSFS_BASE_BACKUP"
-          for dir in "$KERNEL_ROOT/KernelSU/kernel" "$KERNEL_ROOT/common/drivers/kernelsu" "$KERNEL_ROOT/drivers/kernelsu"; do
-            # 只备份真实目录；drivers/kernelsu 通常是指向 KernelSU/kernel 的软链接，无需备份
-            if [ -d "$dir" ] && [ ! -L "$dir" ]; then
-              cp -r "$dir" "$SUSFS_BASE_BACKUP/$(basename "$dir")"
-            fi
-          done
-          echo "已备份 KernelSU 内核源码基础状态: $SUSFS_BASE_BACKUP"
 
           cd $KERNEL_ROOT/common
           patch -p1 < "50_add_susfs_in_gki-${ABK_ANDROID_VERSION}-${ABK_KERNEL_VERSION}.patch" || true
@@ -2418,19 +2422,39 @@ jobs:
           # 统计 .rej 时排除备份目录，避免备份里的 .rej 被重复计数
           REJ_COUNT=$(find "$KERNEL_ROOT" -type f -name '*.rej' -not -path "$SUSFS_BASE_BACKUP/*" 2>/dev/null | wc -l)
           if [ "$REJ_COUNT" -gt 0 ]; then
-            echo "::warning::SUSFS 修复补丁有 $REJ_COUNT 个文件应用失败，回滚 KernelSU 源码到基础状态"
+            echo "::warning::SUSFS 修复补丁有 $REJ_COUNT 个文件应用失败，回滚 KernelSU 源码到原始状态"
             # 必须使用绝对路径：此时当前目录已切换到 $KERNEL_ROOT/common，
             # 使用相对路径会导致 cp 目标不存在而直接失败
-            for dir in "$KERNEL_ROOT/KernelSU/kernel" "$KERNEL_ROOT/common/drivers/kernelsu" "$KERNEL_ROOT/drivers/kernelsu"; do
-              backup_dir="$SUSFS_BASE_BACKUP/$(basename "$dir")"
-              if [ -d "$backup_dir" ]; then
-                rm -rf "$dir"
-                cp -a "$backup_dir" "$dir" || echo "::warning::回滚 $dir 未完成，保留当前状态继续构建"
+            # 备份名用唯一 key（与备份段一致），避免 basename 冲突
+            for cand in "$KERNEL_ROOT/KernelSU/kernel" "$KERNEL_ROOT/common/drivers/kernelsu" "$KERNEL_ROOT/drivers/kernelsu"; do
+              BACKUP_KEY=$(echo "$cand" | sed "s|$KERNEL_ROOT/||; s|/|_|g")
+              BACKUP_SRC="$SUSFS_BASE_BACKUP/$BACKUP_KEY"
+              if [ -d "$BACKUP_SRC" ]; then
+                rm -rf "$cand"
+                mkdir -p "$(dirname "$cand")"
+                cp -a "$BACKUP_SRC" "$cand" || echo "::warning::回滚 $cand 未完成，保留当前状态继续构建"
+                echo "已回滚 $cand"
               fi
             done
-            find "$KERNEL_ROOT" -type f -name '*.rej' -delete 2>/dev/null || true
+            find "$KERNEL_ROOT" -type f -name '*.rej' -not -path "$SUSFS_BASE_BACKUP/*" -delete 2>/dev/null || true
           else
             echo "SUSFS 修复补丁全部应用成功"
+          fi
+
+          # ApkeSU init.c 强制保护：
+          # ApkeSU 的 init.c 与 KernelSU 结构不同（含 ksu_lsm_hook_init/ksu_late_loaded/
+          # ksu_syscall_hook_manager_init 等 SukiSU 特征），10_enable/修复补丁即使成功
+          # 也可能破坏其声明可见性。无论回滚是否触发，都从原始备份恢复 init.c 单文件，
+          # 保证编译通过（SUSFS 钩子由 fix_sukisu_susfs.py 与源码兼容步骤补齐）。
+          if [ "$ABK_KSU_VARIANT" == "ApkeSU" ]; then
+            for cand in "$KERNEL_ROOT/KernelSU/kernel" "$KERNEL_ROOT/common/drivers/kernelsu" "$KERNEL_ROOT/drivers/kernelsu"; do
+              BACKUP_KEY=$(echo "$cand" | sed "s|$KERNEL_ROOT/||; s|/|_|g")
+              if [ -f "$SUSFS_BASE_BACKUP/$BACKUP_KEY/core/init.c" ] && [ -f "$cand/core/init.c" ]; then
+                cp -a "$SUSFS_BASE_BACKUP/$BACKUP_KEY/core/init.c" "$cand/core/init.c"
+                echo "已恢复 ApkeSU init.c 到原始版本"
+                break
+              fi
+            done
           fi
 
       - name: 确保 SUSFS Kconfig 与核心对象
