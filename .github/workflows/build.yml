@@ -2466,10 +2466,9 @@ jobs:
           from pathlib import Path
           import re
           import sys
+          import textwrap
 
           root = Path(sys.argv[1]).resolve()
-          # 定位 KernelSU/kernel（回滚后原始源码，10_enable 对 selinux_hide.c/selinux.c 的
-          # 符号导出修改已被回滚删除；security/selinux/*.c 由 50_add 补丁引用这些符号）
           ksu_dir = None
           for cand in [root / "KernelSU/kernel", root / "common/drivers/kernelsu",
                        root / "drivers/kernelsu", root / "kernel"]:
@@ -2493,12 +2492,39 @@ jobs:
                   ("static DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key)", "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key)"),
                   ("static struct page *fake_status = NULL", "struct page *fake_status = NULL"),
                   ("static void initialize_fake_status()", "void initialize_fake_status()"),
+                  # SUSFS 6.6: selinuxfs.c 的 my_write_context/my_write_access/my_setprocattr 引用
+                  # （声明+定义均为 static，需全部导出；1101 行定义为 __nocfi 变体）
+              ]
+              # 用正则处理（兼容 __maybe_static / __nocfi / 声明与定义多处出现）
+              static_patterns = [
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?bool\s+ksu_selinux_hide_enabled\s+__read_mostly\s*=\s*false\s*;",
+                   "bool ksu_selinux_hide_enabled __read_mostly = false;"),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?bool\s+ksu_selinux_hide_running\s+__read_mostly\s*=\s*false\s*;",
+                   "bool ksu_selinux_hide_running __read_mostly = false;"),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?write_op_fn\s*\*\s*selinux_write_op\s*;",
+                   "write_op_fn *selinux_write_op;"),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?struct\s+selinux_state\s+fake_state\s*;",
+                   "struct selinux_state fake_state;"),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?DEFINE_STATIC_KEY_FALSE\s*\(\s*fake_status_initialize_key\s*\)\s*;",
+                   "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);"),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?struct\s+page\s*\*\s*fake_status\s*(?:=\s*NULL)?\s*;",
+                   "struct page *fake_status = NULL;"),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?void\s+initialize_fake_status\s*\(\s*(?:void)?\s*\)",
+                   "void initialize_fake_status(void)"),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?int\s+security_context_to_sid_with_policy\s*\(",
+                   "int security_context_to_sid_with_policy("),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?int\s+security_sid_to_context_with_policy\s*\(",
+                   "int security_sid_to_context_with_policy("),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?void\s+__nocfi\s+security_compute_av_user_with_policy\s*\(",
+                   "void __nocfi security_compute_av_user_with_policy("),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?void\s+security_compute_av_user_with_policy\s*\(",
+                   "void security_compute_av_user_with_policy("),
               ]
               done = []
-              for old, new in replaces:
-                  if old in t:
-                      t = t.replace(old, new, 1)
-                      done.append(old)
+              for pat, new in static_patterns:
+                  if re.search(pat, t):
+                      t = re.sub(pat, new, t)
+                      done.append(new.split("(")[0].strip())
               if done:
                   sh.write_text(t)
                   print(f"已导出 selinux_hide.c 符号: {len(done)}")
@@ -2507,18 +2533,214 @@ jobs:
               else:
                   print("selinux_hide.c 符号已导出或无需修改")
 
-          # Part 2: selinux/selinux.c 添加 susfs_ksu_sid / susfs_priv_app_sid 定义
+          # Part 2: selinux/selinux.c 添加完整 SUSFS 域符号
           sc = ksu_dir / "selinux/selinux.c"
           if sc.exists():
               t = sc.read_text()
-              if "susfs_ksu_sid" not in t:
-                  add = "\n/* SUSFS: KSU selinux sid bridges (ABK ApkeSU) */\n" \
-                        "u32 susfs_ksu_sid __read_mostly = 0;\n" \
-                        "u32 susfs_priv_app_sid __read_mostly = 0;\n"
-                  sc.write_text(t.rstrip() + "\n" + add)
-                  print("已添加 susfs_ksu_sid / susfs_priv_app_sid 定义")
+              if "susfs_is_current_ksu_domain" not in t:
+                  susfs_block = textwrap.dedent('''
+                  /* === SUSFS: KSU selinux sid bridges (ABK ApkeSU) === */
+                  #define KERNEL_INIT_DOMAIN "u:r:init:s0"
+                  #define KERNEL_ZYGOTE_DOMAIN "u:r:zygote:s0"
+                  #define KERNEL_ZYGOTE_NEXT_DOMAIN "u:r:zygote_next:s0"
+                  #define KERNEL_PRIV_APP_DOMAIN "u:r:priv_app:s0:c512,c768"
+
+                  u32 susfs_ksu_sid __read_mostly = 0;
+                  u32 susfs_init_sid __read_mostly = 0;
+                  u32 susfs_zygote_sid __read_mostly = 0;
+                  u32 susfs_zygote_next_sid __read_mostly = 0;
+                  u32 susfs_priv_app_sid __read_mostly = 0;
+
+                  static inline void susfs_set_sid(const char *secctx_name, u32 *out_sid)
+                  {
+                      int err;
+
+                      if (!secctx_name || !out_sid) {
+                          pr_err("secctx_name || out_sid is NULL\n");
+                          return;
+                      }
+                      err = security_secctx_to_secid(secctx_name, strlen(secctx_name), out_sid);
+                      if (err) {
+                          pr_err("failed setting sid for '%s', err: %d\n", secctx_name, err);
+                          return;
+                      }
+                      pr_info("sid '%u' is set for secctx_name '%s'\n", *out_sid, secctx_name);
+                  }
+
+                  bool susfs_is_sid_equal(const struct cred *cred, u32 sid2)
+                  {
+                      struct task_security_struct *tsec;
+
+                      if (!cred)
+                          return false;
+                      tsec = selinux_cred(cred);
+                      return tsec->sid == sid2;
+                  }
+
+                  u32 susfs_get_sid_from_name(const char *secctx_name)
+                  {
+                      u32 out_sid = 0;
+
+                      if (!secctx_name)
+                          return 0;
+                      if (security_secctx_to_secid(secctx_name, strlen(secctx_name), &out_sid)) {
+                          pr_err("failed getting sid from secctx_name: %s, err: %d\n", secctx_name, -ESRCH);
+                          return 0;
+                      }
+                      return out_sid;
+                  }
+
+                  u32 susfs_get_current_sid(void)
+                  {
+                      return current_sid();
+                  }
+
+                  bool susfs_is_current_zygote_domain(void)
+                  {
+                      return unlikely(current_sid() == susfs_zygote_sid);
+                  }
+
+                  bool susfs_is_current_zygote_next_domain(void)
+                  {
+                      return unlikely(current_sid() == susfs_zygote_next_sid);
+                  }
+
+                  bool susfs_is_current_ksu_domain(void)
+                  {
+                      return unlikely(current_sid() == susfs_ksu_sid);
+                  }
+
+                  bool susfs_is_current_init_domain(void)
+                  {
+                      return unlikely(current_sid() == susfs_init_sid);
+                  }
+
+                  void susfs_set_batch_sid(void)
+                  {
+                      susfs_set_sid(KERNEL_ZYGOTE_DOMAIN, &susfs_zygote_sid);
+                      susfs_set_sid(KERNEL_ZYGOTE_NEXT_DOMAIN, &susfs_zygote_next_sid);
+                      susfs_set_sid(KERNEL_SU_CONTEXT, &susfs_ksu_sid);
+                      susfs_set_sid(KERNEL_INIT_DOMAIN, &susfs_init_sid);
+                      susfs_set_sid(KERNEL_PRIV_APP_DOMAIN, &susfs_priv_app_sid);
+                  }
+                  ''')
+                  sc.write_text(t.rstrip() + "\n" + susfs_block)
+                  print("已添加完整 SUSFS 域符号（5 sid + 域判断函数）")
               else:
-                  print("selinux/selinux.c 已有 susfs sid")
+                  print("selinux/selinux.c 已有 susfs 域符号")
+
+          # Part 3: KernelSU 官方 syscall hook API 适配层
+          compat = ksu_dir / "hook/ksu_susfs_compat.c"
+          compat_src = textwrap.dedent(r'''
+          /* KernelSU 官方 syscall hook API 兼容层 (ABK ApkeSU)
+           * ApkeSU(SukiSU 系) 使用 syscall_event_bridge / dispatcher 机制，
+           * 不提供 KernelSU 官方的 per-syscall hook 符号。SUSFS 6.6+ 的 50_add 补丁
+           * 在内核 syscall 中插桩调用这些符号，本文件提供等价实现保证链接与基础功能。
+           * 静态分支默认关闭：SUSFS 的 input/init_rc 钩子不生效，su 检测由 ApkeSU 自身完成。
+           */
+          #include <linux/fs.h>
+          #include <linux/stat.h>
+          #include <linux/reboot.h>
+          #include <linux/uaccess.h>
+          #include <linux/uidgid.h>
+          #include <linux/string.h>
+          #include <linux/version.h>
+          #include <linux/jump_label.h>
+          #include <linux/cred.h>
+
+          #include "include/ksu.h"
+          #include "policy/allowlist.h"
+
+          DEFINE_STATIC_KEY_FALSE(ksu_is_input_hook_enabled);
+          DEFINE_STATIC_KEY_FALSE(ksu_is_init_rc_hook_enabled);
+
+          int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *value)
+          {
+              return 0;
+          }
+
+          static bool is_su_filename(const char *name)
+          {
+              if (unlikely(!name))
+                  return false;
+              return strcmp(name, "/system/bin/su") == 0 ||
+                     strcmp(name, "/system/xbin/su") == 0 ||
+                     strcmp(name, "/sbin/su") == 0;
+          }
+
+          int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
+                                  void *envp, int *flags)
+          {
+              struct filename *filename;
+              uid_t uid;
+
+              if (unlikely(!filename_ptr || !*filename_ptr))
+                  return 1;
+              filename = *filename_ptr;
+              if (unlikely(!filename->name || !is_su_filename(filename->name)))
+                  return 1;
+              uid = from_kuid(current_user_ns(), current_uid());
+              if (unlikely(!ksu_is_allow_uid_for_current(uid)))
+                  return 1;
+              return 0; /* su session */
+          }
+
+          /* SUSFS 5.10-6.6: fs/exec.c 在 su 会话 exec 后调用（6.12 起不再引用）。
+           * ApkeSU 无此符号；返回 0（成功）即可，su 会话由 ApkeSU 自身机制接管。 */
+          int ksu_handle_post_execveat_sucompat(int *fd, struct filename **filename_ptr,
+                                                void *argv, void *envp, int *flags, int *retval)
+          {
+              return 0;
+          }
+
+          int ksu_handle_faccessat(int *dfd, struct filename **filename, int *mode, int *flags)
+          {
+              return 0;
+          }
+
+          void ksu_handle_sys_read(unsigned int fd)
+          {
+          }
+
+          void ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr)
+          {
+          }
+
+          int ksu_handle_stat(int *dfd, struct filename **filename, int *flags)
+          {
+              return 0;
+          }
+
+          int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg)
+          {
+              return 0;
+          }
+
+          /* ApkeSU supercall.c 提供强定义时优先使用，缺失时由本弱定义兜底 */
+          __weak int ksu_install_su_fd(void)
+          {
+              return 0;
+          }
+          ''')
+          if not compat.exists():
+              compat.write_text(compat_src)
+              print("已写入 hook/ksu_susfs_compat.c 适配层")
+          else:
+              print("hook/ksu_susfs_compat.c 已存在，跳过写入")
+
+          kb = ksu_dir / "Kbuild"
+          if kb.exists():
+              kt = kb.read_text()
+              if "ksu_susfs_compat.o" not in kt:
+                  if "kernelsu-objs += hook/lsm_hook.o" in kt:
+                      kt = kt.replace("kernelsu-objs += hook/lsm_hook.o",
+                                      "kernelsu-objs += hook/lsm_hook.o\nkernelsu-objs += hook/ksu_susfs_compat.o", 1)
+                  else:
+                      kt = kt.rstrip() + "\nkernelsu-objs += hook/ksu_susfs_compat.o\n"
+                  kb.write_text(kt)
+                  print("Kbuild 已接入 ksu_susfs_compat.o")
+              else:
+                  print("Kbuild 已有 ksu_susfs_compat.o")
 
           # 验证：所有被 security/selinux 引用的符号必须非 static
           if sh.exists():
@@ -2529,12 +2751,75 @@ jobs:
                   "fake_state": r"(?m)^\s*static\s+struct\s+selinux_state\s+fake_state",
                   "fake_status": r"(?m)^\s*static\s+struct\s+page\s+\*fake_status",
                   "initialize_fake_status": r"(?m)^\s*static\s+void\s+initialize_fake_status",
+                  "security_context_to_sid_with_policy": r"(?m)^\s*static\s+int\s+security_context_to_sid_with_policy",
+                  "security_sid_to_context_with_policy": r"(?m)^\s*static\s+int\s+security_sid_to_context_with_policy",
+                  "security_compute_av_user_with_policy": r"(?m)^\s*static\s+void\s+security_compute_av_user_with_policy",
               }
               bad = [k for k, pat in check.items() if re.search(pat, t)]
               if bad:
                   print(f"::error::SUSFS 符号仍为 static: {bad}")
                   sys.exit(1)
               print("SUSFS 符号桥接验证通过")
+          PY
+
+      - name: 修复 50_add 内核插桩 ApkeSU 兼容（sucompat/su_compat 类型）
+        if: inputs.enable_susfs && inputs.ksu_variant == 'ApkeSU'
+        working-directory: ${{ env.KERNEL_ROOT }}
+        run: |
+          set -euo pipefail
+          COMMON_DIR=""
+          for d in "$KERNEL_ROOT/common" "$KERNEL_ROOT"; do
+            if [ -d "$d/fs" ]; then
+              COMMON_DIR="$d"
+              break
+            fi
+          done
+          if [ -z "$COMMON_DIR" ]; then
+            echo "::error::未找到内核树 common/ 目录"
+            exit 1
+          fi
+          python3 - "$COMMON_DIR" <<'PY'
+          from pathlib import Path
+          import sys
+
+          root = Path(sys.argv[1]).resolve()
+          files = ["fs/exec.c", "fs/open.c", "fs/read_write.c", "kernel/sys.c"]
+          for rel in files:
+              p = root / rel
+              if not p.exists():
+                  print(f"跳过（不存在）: {rel}")
+                  continue
+              t = p.read_text()
+              orig = t
+              # 1) exec.c: ksu_handle_execveat_sucompat(legacy 签名) 改为 ksu_handle_execveat
+              #    （ApkeSU 的 sucompat 是 modern 版签名，legacy 调用 ABI 不匹配；ApkeSU
+              #      自身的 syscall_event_bridge 已处理 su 会话，统一走 execveat 检测）
+              if "ksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags)" in t:
+                  t = t.replace("ksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags)",
+                                "ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags)")
+                  print(f"{rel}: sucompat 调用 -> ksu_handle_execveat")
+              # 2) ksu_su_compat_enabled：SUSFS 期望 static_key_true，ApkeSU 是 bool 变量
+              #    -> 统一为 bool + likely()
+              if "extern struct static_key_true ksu_su_compat_enabled;" in t:
+                  t = t.replace("extern struct static_key_true ksu_su_compat_enabled;",
+                                "extern bool ksu_su_compat_enabled;")
+                  print(f"{rel}: ksu_su_compat_enabled extern 改为 bool")
+              if "static_branch_likely(&ksu_su_compat_enabled)" in t:
+                  t = t.replace("static_branch_likely(&ksu_su_compat_enabled)",
+                                "likely(ksu_su_compat_enabled)")
+                  print(f"{rel}: static_branch_likely -> likely")
+              # 3) sys.c: ksu_handle_setresuid 3 参 -> ApkeSU 2 参 (old_uid, new_uid)
+              if "extern int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid);" in t:
+                  t = t.replace("extern int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid);",
+                                "extern int ksu_handle_setresuid(uid_t ruid, uid_t suid);")
+                  print(f"{rel}: setresuid extern 改为 2 参")
+              if "ksu_handle_setresuid(ruid, euid, suid)" in t:
+                  t = t.replace("ksu_handle_setresuid(ruid, euid, suid)",
+                                "ksu_handle_setresuid(ruid, suid)")
+                  print(f"{rel}: setresuid 调用改为 2 参")
+              if t != orig:
+                  p.write_text(t)
+          print("50_add 插桩 ApkeSU 兼容修复完成")
           PY
 
       - name: 确保 SUSFS Kconfig 与核心对象
