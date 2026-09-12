@@ -1721,7 +1721,21 @@ jobs:
       - name: 确保 KernelSU SUSFS ABI 兼容
         if: (inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU') && inputs.enable_susfs
         working-directory: ${{ env.KERNEL_ROOT }}
-        run: python3 "$GITHUB_WORKSPACE/.github/scripts/ensure-ksu-compat.py" "$KERNEL_ROOT"
+        run: |
+          set -euo pipefail
+          KSU_DIR=""
+          for dir in ./common/drivers/kernelsu ./drivers/kernelsu ./KernelSU/kernel ./kernel; do
+            if [ -f "$dir/Kbuild" ]; then
+              KSU_DIR="$dir"
+              break
+            fi
+          done
+          if [ -z "$KSU_DIR" ]; then
+            echo "::warning::未找到 KernelSU 源码树，跳过 SUSFS ABI 预检"
+            exit 0
+          fi
+          echo "KernelSU 树: $KSU_DIR"
+          echo "SUSFS ABI 兼容由后续步骤保证：ReSukiSU 走『修复 SukiSU 家族 SUSFS 源码兼容』，ApkeSU 走『桥接 ApkeSU SUSFS 符号』与『修复 50_add 内核插桩 ApkeSU 兼容』。"
 
       - name: 配置 SukiSU 管理器信息
         if: inputs.ksu_variant == 'SukiSU'
@@ -2601,12 +2615,20 @@ jobs:
                    "bool ksu_selinux_hide_running __read_mostly = false;"),
                   (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?bool\s+ksu_selinux_hide_enabled\s+__read_mostly\s*=\s*false\s*;",
                    "bool ksu_selinux_hide_enabled __read_mostly = false;"),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?DEFINE_STATIC_KEY_FALSE\s*\(\s*fake_status_initialize_key\s*\)\s*;",
+                   "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);"),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?struct\s+page\s*\*\s*fake_status\s*(?:=\s*NULL)?\s*;",
+                   "struct page *fake_status = NULL;"),
+                  (r"(?m)^([ \t]*)(?:static\s+|__maybe_static\s+)?void\s+initialize_fake_status\s*\(\s*\)",
+                   r"\1void initialize_fake_status(void)"),
                   (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?int\s+security_context_to_sid_with_policy\s*\(",
                    "int security_context_to_sid_with_policy("),
                   (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?int\s+security_sid_to_context_with_policy\s*\(",
                    "int security_sid_to_context_with_policy("),
                   (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?void\s+__nocfi\s+security_compute_av_user_with_policy\s*\(",
                    "void __nocfi security_compute_av_user_with_policy("),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?void\s+security_compute_av_user_with_policy\s*\(",
+                   "void security_compute_av_user_with_policy("),
                   (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?bool\s+__ksu_is_allow_uid_for_current\s*\(",
                    "bool __ksu_is_allow_uid_for_current("),
               ]:
@@ -2618,129 +2640,256 @@ jobs:
           if selinux_c.is_file():
               text = selinux_c.read_text()
               if "susfs_ksu_sid" not in text:
-                  block = '''
-          // ABK/ApkeSU: SUSFS symbol bridge — sid storage + avc hooks
-                u32 susfs_ksu_sid;
-                u32 susfs_priv_app_sid;
-                u32 ksu_sid;
-                u32 ksu_su_sid;
-                u32 ksu_system_sid;
-                u32 ksu_priv_app_sid;
+                  block = r'''
+          /* ABK/ApkeSU: SUSFS symbol bridge — sid storage + domain helpers */
+          #ifndef KERNEL_INIT_DOMAIN
+          #define KERNEL_INIT_DOMAIN "u:r:init:s0"
+          #endif
+          #ifndef KERNEL_ZYGOTE_DOMAIN
+          #define KERNEL_ZYGOTE_DOMAIN "u:r:zygote:s0"
+          #endif
+          #ifndef KERNEL_ZYGOTE_NEXT_DOMAIN
+          #define KERNEL_ZYGOTE_NEXT_DOMAIN "u:r:zygote_next:s0"
+          #endif
+          #ifndef KERNEL_PRIV_APP_DOMAIN
+          #define KERNEL_PRIV_APP_DOMAIN "u:r:priv_app:s0:c512,c768"
+          #endif
 
-                static int apkesu_susfs_avc_has_perm(u32 ssid, u32 tsid, u16 tclass, u32 requested,
-                                                     struct av_decision *avd, struct selinux_state *state)
-                {
-                    return avc_has_perm(ssid, tsid, tclass, requested, avd);
-                }
+          u32 susfs_ksu_sid __read_mostly = 0;
+          u32 susfs_init_sid __read_mostly = 0;
+          u32 susfs_zygote_sid __read_mostly = 0;
+          u32 susfs_zygote_next_sid __read_mostly = 0;
+          u32 susfs_priv_app_sid __read_mostly = 0;
 
-                static int apkesu_susfs_avc_has_perm_noaudit(u32 ssid, u32 tsid, u16 tclass, u32 requested,
-                                                             unsigned int flags, struct av_decision *avd)
-                {
-                    return avc_has_perm_noaudit(ssid, tsid, tclass, requested, flags, avd);
-                }
+          static inline void susfs_set_sid(const char *secctx_name, u32 *out_sid)
+          {
+              int err;
 
-                static u32 apkesu_susfs_avc_policy_seqno(struct selinux_state *state)
-                {
-                    return avc_policy_seqno(state);
-                }
+              if (!secctx_name || !out_sid)
+                  return;
+              err = security_secctx_to_secid(secctx_name, strlen(secctx_name), out_sid);
+              if (err) {
+                  pr_err("susfs: failed setting sid for '%s', err: %d\n", secctx_name, err);
+                  return;
+              }
+              pr_info("susfs: sid '%u' is set for secctx_name '%s'\n", *out_sid, secctx_name);
+          }
 
-                static int apkesu_susfs_avc_ss_reset(struct selinux_state *state, u32 seqno)
-                {
-                    return avc_ss_reset(seqno);
-                }
+          u32 susfs_get_current_sid(void)
+          {
+              return selinux_cred(current_cred())->sid;
+          }
 
-                static int apkesu_susfs_security_sid_to_context_force(u32 sid, char **scontext, u32 *scontext_len)
-                {
-                    return security_sid_to_context_force(sid, scontext, scontext_len);
-                }
+          bool susfs_is_sid_equal(const struct cred *cred, u32 sid2)
+          {
+              if (!cred)
+                  return false;
+              return selinux_cred(cred)->sid == sid2;
+          }
 
-                  '''
+          u32 susfs_get_sid_from_name(const char *secctx_name)
+          {
+              u32 out_sid = 0;
+
+              if (!secctx_name)
+                  return 0;
+              if (security_secctx_to_secid(secctx_name, strlen(secctx_name), &out_sid))
+                  return 0;
+              return out_sid;
+          }
+
+          bool susfs_is_current_zygote_domain(void)
+          {
+              return unlikely(susfs_get_current_sid() == susfs_zygote_sid);
+          }
+
+          bool susfs_is_current_zygote_next_domain(void)
+          {
+              return unlikely(susfs_get_current_sid() == susfs_zygote_next_sid);
+          }
+
+          bool susfs_is_current_ksu_domain(void)
+          {
+              return unlikely(susfs_get_current_sid() == susfs_ksu_sid);
+          }
+
+          bool susfs_is_current_init_domain(void)
+          {
+              return unlikely(susfs_get_current_sid() == susfs_init_sid);
+          }
+
+          void susfs_set_batch_sid(void)
+          {
+              susfs_set_sid(KERNEL_ZYGOTE_DOMAIN, &susfs_zygote_sid);
+              susfs_set_sid(KERNEL_ZYGOTE_NEXT_DOMAIN, &susfs_zygote_next_sid);
+              susfs_set_sid(KERNEL_SU_CONTEXT, &susfs_ksu_sid);
+              susfs_set_sid(KERNEL_INIT_DOMAIN, &susfs_init_sid);
+              susfs_set_sid(KERNEL_PRIV_APP_DOMAIN, &susfs_priv_app_sid);
+          }
+
+          '''
                   text = text.rstrip() + "\n" + block
-                  write_if_changed(selinux_c, text, "selinux.c 追加 SUSFS sid + avc 域")
+                  write_if_changed(selinux_c, text, "selinux.c 追加 SUSFS sid/域桥接")
 
           # 3) 适配层
           compat = ksu / "hook/ksu_susfs_compat.c"
           if not compat.exists():
               compat.write_text('''
-          // ABK/ApkeSU: SUSFS 符号桥接适配层 — 补齐 KernelSU 官方 syscall hook API 与 static_key
-            #include <linux/kernel.h>
-            #include <linux/fs.h>
-            #include <linux/namei.h>
-            #include <linux/sched.h>
-            #include <linux/compiler.h>
-            #include <linux/uidgid.h>
-            #include <linux/version.h>
-            #include "allowlist.h"
+          // ABK/ApkeSU: SUSFS 符号桥接适配层 — KernelSU 官方 syscall hook API / static_key 兜底实现
+          // ApkeSU 通过自身 kprobe/syscall-bridge 处理 su 语义；本层仅保证 50_add 内核插桩
+          // 能链接并安全返回"非 su 会话"，避免与 ApkeSU 自身机制重复处理。
+          #include <linux/fs.h>
+          #include <linux/sched.h>
+          #include <linux/cred.h>
+          #include <linux/errno.h>
+          #include <linux/jump_label.h>
+          #include <linux/uaccess.h>
+          #ifdef CONFIG_KSU_SUSFS
+          #include <linux/susfs_def.h>
+          #include <linux/susfs.h>
+          #endif
 
-            DEFINE_STATIC_KEY_FALSE(ksu_is_input_hook_enabled);
-            DEFINE_STATIC_KEY_FALSE(ksu_is_init_rc_hook_enabled);
+          DEFINE_STATIC_KEY_FALSE(ksu_is_input_hook_enabled);
+          DEFINE_STATIC_KEY_FALSE(ksu_is_init_rc_hook_enabled);
 
-            int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *value)
-            {
-                return 0;
-            }
+          /* ApkeSU 用 reboot kprobe 安装 supercall fd；本函数只处理 SUSFS 命令通道 */
+          #ifndef KSU_INSTALL_MAGIC1
+          #define KSU_INSTALL_MAGIC1 0xDEADBEEF
+          #endif
+          #ifndef KSU_INSTALL_MAGIC2
+          #define KSU_INSTALL_MAGIC2 0xCAFEBABE
+          #endif
 
-            static bool is_su_filename(const char *name)
-            {
-                if (!name)
-                    return false;
-                return strcmp(name, "/system/bin/su") == 0 ||
-                       strcmp(name, "/system/xbin/su") == 0 ||
-                       strcmp(name, "/sbin/su") == 0;
-            }
+          int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
+                                  void *envp, int *flags)
+          {
+              return -EINVAL;
+          }
 
-            int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
-                                    void *envp, int *flags)
-            {
-                struct filename *filename = *filename_ptr;
-                if (filename && is_su_filename(filename->name)) {
-                    kuid_t kuid = current_uid();
-                    if (ksu_is_allow_uid_for_current(kuid.val))
-                        return 0;
-                }
-                return 0;
-            }
+          int ksu_handle_post_execveat_sucompat(int *fd, struct filename **filename_ptr, void *argv,
+                                                void *envp, int *flags, int *retval)
+          {
+              return 0;
+          }
 
-            int ksu_handle_post_execveat_sucompat(int *fd, struct filename **filename_ptr, void *argv,
-                                                  void *envp, int *flags, int *retval)
-            {
-                return 0;
-            }
+          int ksu_handle_faccessat(int *dfd, struct filename **filename, int *mode, int *__unused_flags)
+          {
+              return 0;
+          }
 
-            int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode, int *__unused_flags)
-            {
-                return 0;
-            }
+          void ksu_handle_sys_read(unsigned int fd)
+          {
+          }
 
-            int ksu_handle_sys_read(unsigned int *fd, char __user **buf, size_t *count)
-            {
-                return 0;
-            }
+          void ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr)
+          {
+          }
 
-            int ksu_handle_vfs_fstat(int *fd, struct kstat *stat)
-            {
-                return 0;
-            }
+          int ksu_handle_stat(int *dfd, struct filename **filename, int *flags)
+          {
+              return 0;
+          }
 
-            int ksu_handle_stat(int *dfd, struct filename **filename, int *flags)
-            {
-                return 0;
-            }
+          int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg)
+          {
+              if (magic1 != KSU_INSTALL_MAGIC1)
+                  return -EINVAL;
 
-            int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user *arg)
-            {
-                return 0;
-            }
-
-            __weak int ksu_install_su_fd(void)
-            {
-                return -EOPNOTSUPP;
-            }
+          #ifdef CONFIG_KSU_SUSFS
+              if (magic2 == SUSFS_MAGIC && current_uid().val == 0) {
+                  switch (cmd) {
+          #ifdef CONFIG_KSU_SUSFS_SUS_PATH
+                  case CMD_SUSFS_ADD_SUS_PATH:
+                      susfs_add_sus_path(arg);
+                      return 0;
+                  case CMD_SUSFS_ADD_SUS_PATH_LOOP:
+                      susfs_add_sus_path_loop(arg);
+                      return 0;
+          #endif
+          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+                  case CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS:
+                      susfs_set_hide_sus_mnts_for_non_su_procs(arg);
+                      return 0;
+          #endif
+          #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+                  case CMD_SUSFS_ADD_SUS_KSTAT:
+                  case CMD_SUSFS_ADD_SUS_KSTAT_STATICALLY:
+                      susfs_add_sus_kstat(arg);
+                      return 0;
+                  case CMD_SUSFS_UPDATE_SUS_KSTAT:
+                      susfs_update_sus_kstat(arg);
+                      return 0;
+          #endif
+          #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+                  case CMD_SUSFS_SET_UNAME:
+                      susfs_set_uname(arg);
+                      return 0;
+          #endif
+          #ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
+                  case CMD_SUSFS_ENABLE_LOG:
+                      susfs_enable_log(arg);
+                      return 0;
+          #endif
+          #ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+                  case CMD_SUSFS_SET_CMDLINE_OR_BOOTCONFIG:
+                      susfs_set_cmdline_or_bootconfig(arg);
+                      return 0;
+          #endif
+          #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+                  case CMD_SUSFS_ADD_OPEN_REDIRECT:
+                      susfs_add_open_redirect(arg);
+                      return 0;
+          #endif
+          #ifdef CONFIG_KSU_SUSFS_SUS_MAP
+                  case CMD_SUSFS_ADD_SUS_MAP:
+                      susfs_add_sus_map(arg);
+                      return 0;
+          #endif
+                  case CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING:
+                      susfs_set_avc_log_spoofing(arg);
+                      return 0;
+                  case CMD_SUSFS_SHOW_ENABLED_FEATURES:
+                      susfs_get_enabled_features(arg);
+                      return 0;
+                  case CMD_SUSFS_SHOW_VARIANT:
+                      susfs_show_variant(arg);
+                      return 0;
+                  case CMD_SUSFS_SHOW_VERSION:
+                      susfs_show_version(arg);
+                      return 0;
+                  default:
+                      return -EINVAL;
+                  }
+              }
+          #endif
+              /* 非 SUSFS 命令（含 KSU_INSTALL_MAGIC2 supercall）交还原生 reboot 流程，
+               * ApkeSU 的 reboot kprobe 会自行完成 fd 安装。 */
+              return -EINVAL;
+          }
 
               ''')
               changed.append("hook/ksu_susfs_compat.c 创建适配层")
 
-          # 4) Kbuild 接入
+          # 4) rules.c：apply_kernelsu_rules() 末尾初始化 SUSFS 域 sid
+          rules_c = ksu / "selinux/rules.c"
+          if rules_c.is_file():
+              text = rules_c.read_text()
+              if "susfs_set_batch_sid" not in text:
+                  anchor = "    reset_avc_cache();\nout_unlock:"
+                  if anchor in text:
+                      replacement = (
+                          "    reset_avc_cache();\n"
+                          "#ifdef CONFIG_KSU_SUSFS\n"
+                          "    void susfs_set_batch_sid(void);\n"
+                          "    susfs_set_batch_sid();\n"
+                          "#endif\n"
+                      )
+                      text = text.replace(anchor, replacement + "out_unlock:", 1)
+                      write_if_changed(rules_c, text, "rules.c 注入 susfs_set_batch_sid")
+                  else:
+                      print("::warning::rules.c 未找到 reset_avc_cache/out_unlock 锚点，跳过 batch sid 注入")
+
+          # 5) Kbuild 接入
           kbuild = ksu / "Kbuild"
           if kbuild.is_file():
               text = kbuild.read_text()
@@ -2796,18 +2945,31 @@ jobs:
                   f.write_text(text)
                   fixed.append(desc + "(" + rel + ")")
 
+          # fs/exec.c：su_compat 在 ApkeSU 中是 bool；sucompat 调用改走桥接桩
           fix_file("fs/exec.c", [
+              ("extern struct static_key_true ksu_su_compat_enabled;",
+               "extern bool ksu_su_compat_enabled;"),
+              ("static_branch_likely(&ksu_su_compat_enabled)",
+               "likely(ksu_su_compat_enabled)"),
               ("ksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags)",
                "ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags)"),
-          ], "exec.c sucompat")
+          ], "exec.c")
 
-          for rel in ["fs/exec.c", "fs/open.c", "fs/read_write.c"]:
+          # fs/open.c、fs/stat.c：su_compat static_key → ApkeSU 的 bool
+          for rel in ["fs/open.c", "fs/stat.c"]:
               fix_file(rel, [
                   ("extern struct static_key_true ksu_su_compat_enabled;",
                    "extern bool ksu_su_compat_enabled;"),
                   ("static_branch_likely(&ksu_su_compat_enabled)",
                    "likely(ksu_su_compat_enabled)"),
-              ], "static_key")
+              ], "su_compat static_key")
+
+          # fs/read_write.c、fs/stat.c：init_rc static_key → 桥接层 static_key_false
+          for rel in ["fs/read_write.c", "fs/stat.c"]:
+              fix_file(rel, [
+                  ("extern struct static_key_true ksu_is_init_rc_hook_enabled;",
+                   "extern struct static_key_false ksu_is_init_rc_hook_enabled;"),
+              ], "init_rc static_key")
 
           # drivers/input/input.c：ksu_is_input_hook_enabled 适配层定义 static_key_false
           fix_file("drivers/input/input.c", [
