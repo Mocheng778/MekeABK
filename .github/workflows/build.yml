@@ -1360,6 +1360,37 @@ jobs:
               fi
               # ===== 修复结束 =====
 
+              # ===== 下载 ApkeSU 预编译 ko 模块（包含 pathmask/SUSFS 路径隐藏支持）=====
+              echo "下载 ApkeSU 预编译 ko 模块..."
+              APKESU_KO_BASE="https://raw.githubusercontent.com/fixz232/ApkeSU/ApkeSU/userspace/ksud/bin/aarch64"
+              ANDROID_VERSION="${{ inputs.android_version }}"
+              KERNEL_VERSION="${{ inputs.kernel_version }}"
+              
+              # 构建 ko 文件名
+              KO_KERNEL_NAME="${ANDROID_VERSION}-${KERNEL_VERSION}_kernelsu.ko"
+              KO_PATHMASK_NAME="${ANDROID_VERSION}-${KERNEL_VERSION}_pathmask.ko"
+              
+              # 创建输出目录
+              mkdir -p KernelSU/prebuilt
+              
+              # 下载 kernelsu.ko
+              if curl -sL -f -o "KernelSU/prebuilt/kernelsu.ko" "${APKESU_KO_BASE}/${KO_KERNEL_NAME}"; then
+                echo "[+] 已下载 ${KO_KERNEL_NAME}"
+              else
+                echo "::warning::下载 ${KO_KERNEL_NAME} 失败"
+              fi
+              
+              # 下载 pathmask.ko (SUSFS 路径隐藏模块)
+              if curl -sL -f -o "KernelSU/prebuilt/pathmask.ko" "${APKESU_KO_BASE}/${KO_PATHMASK_NAME}"; then
+                echo "[+] 已下载 ${KO_PATHMASK_NAME} (pathmask/SUSFS)"
+              else
+                echo "::warning::下载 ${KO_PATHMASK_NAME} 失败"
+              fi
+              
+              # 列出下载的 ko 文件
+              ls -lh KernelSU/prebuilt/ || true
+              # ===== ko 模块下载结束 =====
+
               cd KernelSU
               KSU_GIT_VERSION=$(git rev-list --count HEAD)
               KSU_VERSION=$((30000 + KSU_GIT_VERSION))
@@ -6229,18 +6260,6 @@ jobs:
               cd bootimgs
               zip -9 "../$images_name" Image Image.lz4 Image.gz
             )
-          fi
-
-      - name: 复制 ApkeSU ko 模块到 AnyKernel3
-        if: inputs.ksu_variant == 'ApkeSU'
-        run: |
-          if [ -d "KernelSU/prebuilt" ]; then
-            echo "复制 ApkeSU ko 模块到 AnyKernel3..."
-            mkdir -p $ANYKERNEL3/modules
-            cp -v KernelSU/prebuilt/*.ko $ANYKERNEL3/modules/ 2>/dev/null || echo "无 ko 文件可复制"
-            ls -lh $ANYKERNEL3/modules/ || true
-          else
-            echo "未找到 ApkeSU prebuilt 目录，跳过 ko 模块复制"
           fi
 
       - name: 创建 AnyKernel3 压缩包
