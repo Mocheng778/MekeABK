@@ -23,7 +23,7 @@ on:
         type: boolean
         default: false
       use_kpm:
-        description: "启用 KPM（仅 SukiSU/ReSukiSU 生效）"
+        description: "启用 KPM（仅 SukiSU/ReSukiSU/ApkeSU 生效）"
         required: false
         type: boolean
         default: false
@@ -236,7 +236,7 @@ jobs:
 
           effective_use_kpm = (
               os.environ.get("MATRIX_USE_KPM", "").lower() == "true"
-              and os.environ.get("MATRIX_KSU_VARIANT", "") in {"SukiSU", "ReSukiSU"}
+              and os.environ.get("MATRIX_KSU_VARIANT", "") in {"SukiSU", "ReSukiSU", "ApkeSU"}
           )
 
           supported_manifest_set = set(SUPPORTED_MANIFESTS)
