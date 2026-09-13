@@ -106,7 +106,7 @@ on:
         type: boolean
         default: false
       use_kpm:
-        description: "启用 KPM（仅 SukiSU/ReSukiSU/ApkeSU）"
+        description: "启用 KPM（仅 SukiSU/ReSukiSU）"
         required: false
         type: boolean
         default: false
