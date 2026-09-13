@@ -39,6 +39,7 @@ on:
         options:
           - SukiSU
           - ReSukiSU
+          - ApkeSU
           - Official
         default: ReSukiSU
       kernelsu_branch:
@@ -373,7 +374,6 @@ jobs:
             "Official")  KSU_NAME="KernelSU" ;;
             "SukiSU")    KSU_NAME="SukiSU" ;;
             "ReSukiSU")  KSU_NAME="ReSukiSU" ;;
-            "ApkeSU")    KSU_NAME="ApkeSU" ;;
             "ApkeSU")    KSU_NAME="ApkeSU" ;;
           esac
           echo "KSU_NAME=$KSU_NAME" >> $GITHUB_ENV
