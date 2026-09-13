@@ -3998,8 +3998,8 @@ jobs:
           )
           PY
 
-      - name: 修复 Official SUSFS 源码兼容
-        if: inputs.ksu_variant == 'Official' && inputs.enable_susfs
+      - name: 修复 Official/ApkeSU SUSFS 源码兼容
+        if: (inputs.ksu_variant == 'Official' || inputs.ksu_variant == 'ApkeSU') && inputs.enable_susfs
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: susfs
