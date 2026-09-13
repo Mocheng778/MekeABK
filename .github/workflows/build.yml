@@ -5378,8 +5378,8 @@ jobs:
               print("Official SUSFS 源码兼容修复无需修改。")
           PY
 
-      - name: 修复 Official SUSFS 6.1-6.12 SELinux 导出
-        if: inputs.ksu_variant == 'Official' && inputs.enable_susfs && (inputs.kernel_version == '6.1' || inputs.kernel_version == '6.6' || inputs.kernel_version == '6.12')
+      - name: 修复 Official/ApkeSU SUSFS 6.1-6.12 SELinux 导出
+        if: (inputs.ksu_variant == 'Official' || inputs.ksu_variant == 'ApkeSU') && inputs.enable_susfs && (inputs.kernel_version == '6.1' || inputs.kernel_version == '6.6' || inputs.kernel_version == '6.12')
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: susfs
