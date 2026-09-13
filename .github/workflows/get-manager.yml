@@ -95,6 +95,12 @@ jobs:
           elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU" ]; then
             echo "This is the ReSukiSU variant"
             git clone https://github.com/ReSukiSU/ReSukiSU.git KernelSU
+          elif [ "${{ inputs.kernelsu_variant }}" == "ApkeSU" ]; then
+            echo "This is the ApkeSU variant"
+            git clone https://github.com/fixz232/ApkeSU.git KernelSU
+            cd KernelSU
+            git checkout ApkeSU
+            cd ..
           elif [ "${{ inputs.kernelsu_variant }}" == "Official" ]; then
             echo "This is the Official"
             git clone https://github.com/tiann/KernelSU.git KernelSU
@@ -214,6 +220,10 @@ jobs:
             "ReSukiSU")
               # ReSukiSU has no release APKs; Actions build-manager (fallback to main latest in script).
               download_manager_for_repo "ReSukiSU/ReSukiSU" "ReSukiSU"
+              ;;
+            "ApkeSU")
+              # ApkeSU - download from releases or Actions
+              download_manager_for_repo "fixz232/ApkeSU" "ApkeSU"
               ;;
             *)
               echo "::error::未知 KernelSU 变体: ${{ inputs.kernelsu_variant }}"
