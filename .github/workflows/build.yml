@@ -6231,6 +6231,18 @@ jobs:
             )
           fi
 
+      - name: 复制 ApkeSU ko 模块到 AnyKernel3
+        if: inputs.ksu_variant == 'ApkeSU'
+        run: |
+          if [ -d "KernelSU/prebuilt" ]; then
+            echo "复制 ApkeSU ko 模块到 AnyKernel3..."
+            mkdir -p $ANYKERNEL3/modules
+            cp -v KernelSU/prebuilt/*.ko $ANYKERNEL3/modules/ 2>/dev/null || echo "无 ko 文件可复制"
+            ls -lh $ANYKERNEL3/modules/ || true
+          else
+            echo "未找到 ApkeSU prebuilt 目录，跳过 ko 模块复制"
+          fi
+
       - name: 创建 AnyKernel3 压缩包
         run: |
           cd $ANYKERNEL3
