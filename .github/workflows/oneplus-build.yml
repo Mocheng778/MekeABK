@@ -83,7 +83,7 @@ jobs:
 
           effective_kpm="$USE_KPM"
           effective_lz4kd="$USE_LZ4KD"
-          if [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "ReSukiSU" ]; then
+          if [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "ReSukiSU" ] && [ "$KSU_VARIANT" != "ApkeSU" ]; then
             effective_kpm="false"
           fi
           if [ "$KSU_VARIANT" = "None" ]; then
