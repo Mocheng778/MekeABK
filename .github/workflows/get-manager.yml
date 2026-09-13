@@ -222,8 +222,19 @@ jobs:
               download_manager_for_repo "ReSukiSU/ReSukiSU" "ReSukiSU"
               ;;
             "ApkeSU")
-              # ApkeSU - download from releases or Actions
-              download_manager_for_repo "fixz232/ApkeSU" "ApkeSU"
+              # ApkeSU - 优先从最新 Release 下载，失败则回退到 Actions
+              echo "尝试从 ApkeSU 最新 Release 下载 APK..."
+              LATEST_TAG=$(curl -fsSL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+                "https://api.github.com/repos/fixz232/ApkeSU/releases/latest" | jq -r ".tag_name")
+              if [ -n "$LATEST_TAG" ] && [ "$LATEST_TAG" != "null" ]; then
+                download_tag_release_apk "fixz232/ApkeSU" "$LATEST_TAG" "ApkeSU" || {
+                  echo "::warning::从 Release 下载失败，尝试从 Actions 产物下载..."
+                  download_manager_for_repo "fixz232/ApkeSU" "ApkeSU"
+                }
+              else
+                echo "::warning::未找到 Release，尝试从 Actions 产物下载..."
+                download_manager_for_repo "fixz232/ApkeSU" "ApkeSU"
+              fi
               ;;
             *)
               echo "::error::未知 KernelSU 变体: ${{ inputs.kernelsu_variant }}"
