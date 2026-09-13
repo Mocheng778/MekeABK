@@ -97,6 +97,7 @@ on:
           - Official
           - SukiSU
           - ReSukiSU
+          - ApkeSU
           - None
         default: SukiSU
       enable_susfs:
