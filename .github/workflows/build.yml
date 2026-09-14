@@ -1347,18 +1347,27 @@ jobs:
               echo "添加 ApkeSU..."
               curl -LSs "https://raw.githubusercontent.com/fixz232/ApkeSU/ApkeSU/kernel/setup.sh" | bash -s ApkeSU
 
-              # ===== 强制同步到 ApkeSU 分支最新提交（避免旧版 sucompat API 不匹配）=====
+              # ===== 强制同步 + 直接覆盖 sucompat 源文件（保证新版 API 一致）=====
               cd KernelSU
               git fetch origin ApkeSU --tags --prune
               git reset --hard origin/ApkeSU
               APKESU_HEAD="$(git rev-parse --short=12 HEAD)"
-              echo "[+] ApkeSU 已强制同步到: ${APKESU_HEAD}"
-              # 校验 sucompat.c 不是旧版（旧版含 user_arg_ptr / ksu_handle_execveat_ksud）
-              if grep -qE 'user_arg_ptr|ksu_handle_execveat_ksud' kernel/feature/sucompat.c 2>/dev/null; then
-                echo "::error::ApkeSU @ ${APKESU_HEAD} 的 sucompat.c 仍是旧版（含 user_arg_ptr/ksu_handle_execveat_ksud），强制同步失败，请检查网络或仓库状态"
+              echo "[+] ApkeSU 已同步到: ${APKESU_HEAD}"
+              # 直接从上游 raw URL 下载覆盖 sucompat.h/c，杜绝 git 同步残留旧版文件
+              APKESU_RAW="https://raw.githubusercontent.com/fixz232/ApkeSU/ApkeSU/kernel/feature"
+              curl -fsSL "${APKESU_RAW}/sucompat.h" -o kernel/feature/sucompat.h || { echo "::error::下载 sucompat.h 失败"; exit 1; }
+              curl -fsSL "${APKESU_RAW}/sucompat.c" -o kernel/feature/sucompat.c || { echo "::error::下载 sucompat.c 失败"; exit 1; }
+              echo "[+] sucompat.h/c 已从上游 ApkeSU 分支直接覆盖"
+              # 校验：新版 sucompat.h 应含 bool ksu_su_compat_enabled 和 3 参数声明
+              if ! grep -q 'bool ksu_su_compat_enabled' kernel/feature/sucompat.h; then
+                echo "::error::sucompat.h 不是新版（缺少 bool ksu_su_compat_enabled）"
                 exit 1
               fi
-              echo "[+] ApkeSU sucompat.c 版本校验通过（新版 API）"
+              if grep -qE 'user_arg_ptr|ksu_handle_execveat_ksud|static_key_true.*su_compat' kernel/feature/sucompat.h kernel/feature/sucompat.c 2>/dev/null; then
+                echo "::error::sucompat.h/c 仍含旧版 API 符号"
+                exit 1
+              fi
+              echo "[+] sucompat.h/c 版本校验通过（新版 3 参数 API）"
               cd ..
               # ===== 强制同步结束 =====
 
