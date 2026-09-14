@@ -356,9 +356,15 @@ jobs:
 
                 # ===== 强制同步到 ApkeSU 分支最新提交（避免旧版 sucompat API 不匹配）=====
                 cd KernelSU
-                git fetch origin ApkeSU --depth=1 2>/dev/null || git fetch origin ApkeSU
+                git fetch origin ApkeSU --tags --prune
                 git reset --hard origin/ApkeSU
-                echo "[+] ApkeSU 已强制同步到: $(git rev-parse --short=12 HEAD)"
+                APKESU_HEAD="$(git rev-parse --short=12 HEAD)"
+                echo "[+] ApkeSU 已强制同步到: ${APKESU_HEAD}"
+                if grep -qE 'user_arg_ptr|ksu_handle_execveat_ksud' kernel/feature/sucompat.c 2>/dev/null; then
+                  echo "::error::ApkeSU @ ${APKESU_HEAD} 的 sucompat.c 仍是旧版，强制同步失败"
+                  exit 1
+                fi
+                echo "[+] ApkeSU sucompat.c 版本校验通过（新版 API）"
                 cd ..
                 # ===== 强制同步结束 =====
 
