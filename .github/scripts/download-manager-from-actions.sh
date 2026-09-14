@@ -89,12 +89,19 @@ try_download_nightly_run() {
   echo "Downloaded manager from ${REPO}@${KSU_SHA} (run ${run_id}, source ${MANAGER_RUN_SOURCE}) via nightly.link"
 }
 
-if ! ksu_find_manager_run_id "$REPO" "$KSU_SHA"; then
+# Detect default branch for fallback (ApkeSU uses 'ApkeSU', not main/master).
+FALLBACK_EXTRA=""
+if [ "$REPO" = "fixz232/ApkeSU" ]; then
+  FALLBACK_EXTRA="ApkeSU"
+fi
+MANAGER_FALLBACK_BRANCH="$(ksu_detect_default_branch "$REPO" "$FALLBACK_EXTRA" 2>/dev/null || echo main)"
+
+if ! ksu_find_manager_run_id "$REPO" "$KSU_SHA" "$MANAGER_FALLBACK_BRANCH"; then
   exit 1
 fi
 run_id="${KSU_MANAGER_RUN_ID}"
 if [ "${MANAGER_RUN_FALLBACK_MAIN:-0}" = "1" ]; then
-  echo "::notice::Manager APK from latest successful build-manager on main (KSU ref was ${KSU_SHA})" >&2
+  echo "::notice::Manager APK from latest successful build-manager on ${MANAGER_FALLBACK_BRANCH} (KSU ref was ${KSU_SHA})" >&2
 fi
 echo "Manager workflow run for ${REPO}@${KSU_SHA} (source=${MANAGER_RUN_SOURCE}): https://github.com/${REPO}/actions/runs/${run_id}"
 

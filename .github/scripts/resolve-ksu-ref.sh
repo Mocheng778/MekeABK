@@ -50,15 +50,33 @@ ksu_workflow_run_id_for_branch() {
 
 ksu_main_head_sha() {
   local repo="$1"
+  local branch="${2:-main}"
   local sha
 
   KSU_API_REPO="$repo"
-  sha="$(ksu_github_api_curl "https://api.github.com/repos/${repo}/git/ref/heads/main" \
+  sha="$(ksu_github_api_curl "https://api.github.com/repos/${repo}/git/ref/heads/${branch}" \
     | jq -r '.object.sha // empty')"
   if [ -z "$sha" ] || [ "$sha" = "null" ]; then
     return 1
   fi
   printf '%s\n' "$sha"
+}
+
+# Detect the repo's default branch (main or master, plus optional extra candidates).
+# Prints branch name to stdout.
+ksu_detect_default_branch() {
+  local repo="$1"
+  shift
+  local candidates=(main master "$@")
+  local branch
+  for branch in "${candidates[@]}"; do
+    [ -n "$branch" ] || continue
+    if ksu_main_head_sha "$repo" "$branch" >/dev/null 2>&1; then
+      printf '%s\n' "$branch"
+      return 0
+    fi
+  done
+  return 1
 }
 
 ksu_latest_build_manager_sha_on_branch() {
@@ -81,33 +99,34 @@ ksu_latest_build_manager_sha_on_branch() {
 # Sets KSU_RESOLVED_LATEST_SHA and KSU_LATEST_SOURCE (no stdout; safe under set -u).
 ksu_resolve_latest_sha() {
   local repo="$1"
+  local source_branch="${2:-main}"
   local main_head sha
 
   KSU_RESOLVED_LATEST_SHA=""
   KSU_LATEST_SOURCE=""
 
-  main_head="$(ksu_main_head_sha "$repo")" || {
-    echo "::error::Failed to read main HEAD for ${repo}" >&2
+  main_head="$(ksu_main_head_sha "$repo" "$source_branch")" || {
+    echo "::error::Failed to read ${source_branch} HEAD for ${repo}" >&2
     return 1
   }
 
   if ksu_workflow_run_id_for_head_sha "$repo" "$KSU_RELEASE_WORKFLOW" "$main_head" >/dev/null; then
-    KSU_LATEST_SOURCE="main-head-release"
+    KSU_LATEST_SOURCE="${source_branch}-head-release"
     KSU_RESOLVED_LATEST_SHA="$main_head"
     return 0
   fi
 
   if ksu_workflow_run_id_for_head_sha "$repo" "$KSU_BUILD_MANAGER_WORKFLOW" "$main_head" >/dev/null; then
-    KSU_LATEST_SOURCE="main-head-build-manager"
+    KSU_LATEST_SOURCE="${source_branch}-head-build-manager"
     KSU_RESOLVED_LATEST_SHA="$main_head"
     return 0
   fi
 
-  sha="$(ksu_latest_build_manager_sha_on_branch "$repo" "main" 1)" || {
-    echo "::error::No successful Release or build-manager run on ${repo}@main (required for Latest)" >&2
+  sha="$(ksu_latest_build_manager_sha_on_branch "$repo" "$source_branch" 1)" || {
+    echo "::error::No successful Release or build-manager run on ${repo}@${source_branch} (required for Latest)" >&2
     return 1
   }
-  KSU_LATEST_SOURCE="main-fallback"
+  KSU_LATEST_SOURCE="${source_branch}-fallback"
   KSU_RESOLVED_LATEST_SHA="$sha"
   return 0
 }
@@ -116,6 +135,7 @@ ksu_resolve_latest_sha() {
 ksu_find_manager_run_id() {
   local repo="$1"
   local sha="$2"
+  local fallback_branch="${3:-main}"
   local run_id
 
   if ! [[ "$sha" =~ ^[A-Fa-f0-9]{40}$ ]]; then
@@ -139,15 +159,15 @@ ksu_find_manager_run_id() {
     return 0
   fi
 
-  echo "::notice::No successful build-manager or Release run for ${repo} at head_sha=${sha}; falling back to latest successful build-manager on main" >&2
-  if run_id="$(ksu_workflow_run_id_for_branch "$repo" "$KSU_BUILD_MANAGER_WORKFLOW" "main")"; then
-    MANAGER_RUN_SOURCE="fallback-main"
+  echo "::notice::No successful build-manager or Release run for ${repo} at head_sha=${sha}; falling back to latest successful build-manager on ${fallback_branch}" >&2
+  if run_id="$(ksu_workflow_run_id_for_branch "$repo" "$KSU_BUILD_MANAGER_WORKFLOW" "$fallback_branch")"; then
+    MANAGER_RUN_SOURCE="fallback-${fallback_branch}"
     MANAGER_RUN_FALLBACK_MAIN=1
     KSU_MANAGER_RUN_ID="$run_id"
     return 0
   fi
 
-  echo "::error::No successful build-manager run for ${repo} on main either" >&2
+  echo "::error::No successful build-manager run for ${repo} on ${fallback_branch} either" >&2
   return 1
 }
 
@@ -216,16 +236,21 @@ resolve_latest() {
   case "$KSU_VARIANT" in
     Official)
       repo="tiann/KernelSU"
+      source_branch="main"
       ;;
     SukiSU)
       # GKI builds use main; builtin is for OnePlus only (oneplus-build.yml, not resolve-ksu-ref).
       repo="$SUKISU_REPO"
+      source_branch="main"
       ;;
     ReSukiSU)
       repo="ReSukiSU/ReSukiSU"
+      source_branch="main"
       ;;
     ApkeSU)
       repo="fixz232/ApkeSU"
+      # ApkeSU repo's default branch is "ApkeSU" (no main/master).
+      source_branch="ApkeSU"
       ;;
     *)
       echo "::error::Unknown KSU variant for Latest: ${KSU_VARIANT}" >&2
@@ -233,8 +258,16 @@ resolve_latest() {
       ;;
   esac
 
-  source_branch="main"
-  if ! ksu_resolve_latest_sha "$repo"; then
+  # Fallback: if the known branch doesn't exist, auto-detect main/master.
+  if ! ksu_main_head_sha "$repo" "$source_branch" >/dev/null 2>&1; then
+    echo "::notice::Branch '${source_branch}' not found on ${repo}; auto-detecting default branch..."
+    source_branch="$(ksu_detect_default_branch "$repo")" || {
+      echo "::error::Cannot detect default branch for ${repo}" >&2
+      return 1
+    }
+  fi
+
+  if ! ksu_resolve_latest_sha "$repo" "$source_branch"; then
     return 1
   fi
 
