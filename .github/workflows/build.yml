@@ -6370,56 +6370,6 @@ jobs:
 
           echo "ABK Control 管理器桥接校验通过。"
 
-      - name: 修复 build_image.py UnicodeDecodeError
-        run: |
-          set -euo pipefail
-          # mkfs.erofs 输出可能含非 UTF-8 字节（如 0x99），导致 build_image.py 的
-          # RunAndCheckOutput 在 subprocess.communicate() 时 UnicodeDecodeError 崩溃。
-          # 给 common.py 的 subprocess 调用添加 errors='replace' 容忍非 UTF-8 字节。
-          COMMON_PY=""
-          for candidate in \
-            "$KERNEL_ROOT/prebuilts/kernel-build-tools/linux-x86/bin/build_image/common.py" \
-            "$KERNEL_ROOT/prebuilts/build-tools/linux-x86/bin/build_image/common.py" \
-            "$GITHUB_WORKSPACE/kernel-build-tools/linux-x86/bin/build_image/common.py"; do
-            if [ -f "$candidate" ]; then
-              COMMON_PY="$candidate"
-              break
-            fi
-          done
-
-          if [ -z "$COMMON_PY" ]; then
-            echo "::warning::未找到 build_image/common.py，跳过 UnicodeDecodeError 修复（尝试 find）"
-            find "$KERNEL_ROOT" -name "common.py" -path "*/build_image/*" 2>/dev/null | head -5 || true
-            exit 0
-          fi
-
-          echo "找到 common.py: $COMMON_PY"
-
-          python3 - "$COMMON_PY" <<'PY'
-          import sys, re
-          path = sys.argv[1]
-          with open(path, 'r', encoding='utf-8', errors='replace') as f:
-              content = f.read()
-          original = content
-
-          def add_errors(m):
-              full = m.group(0)
-              if 'errors=' in full:
-                  return full
-              return full.replace('True', 'True, errors="replace"', 1)
-
-          # 匹配 text=True / universal_newlines=True 后跟 , 或 ) 的调用
-          pattern = r'(?:text|universal_newlines)\s*=\s*True(?=\s*[,)])'
-          content = re.sub(pattern, add_errors, content, flags=re.IGNORECASE)
-
-          if content != original:
-              with open(path, 'w', encoding='utf-8') as f:
-                  f.write(content)
-              print(f"[+] 已修复 {path}：subprocess 调用添加 errors='replace'")
-          else:
-              print(f"[+] {path} 无需修改")
-          PY
-
       - name: 编译内核
         uses: nick-fields/retry@v4
         with:
@@ -6663,6 +6613,40 @@ jobs:
               if [ "${{ inputs.kernel_version }}" = "6.12" ]; then
                 LTO_FLAG="--lto=none"
               fi
+
+              # ===== 修复 build_image.py UnicodeDecodeError =====
+              # mkfs.erofs 输出含非 UTF-8 字节导致 RunAndCheckOutput 解码崩溃
+              set +e
+              COMMON_PY="$(find . -path "*/build_image/common.py" -type f 2>/dev/null | head -1)"
+              if [ -n "$COMMON_PY" ]; then
+                echo "[+] 找到 common.py: $COMMON_PY"
+                python3 - "$COMMON_PY" <<'PYEOF'
+            import sys, re
+            path = sys.argv[1]
+            with open(path, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read()
+            original = content
+            def add_errors(m):
+                full = m.group(0)
+                if 'errors=' in full:
+                    return full
+                return full.replace('True', 'True, errors="replace"', 1)
+            pattern = r'(?:text|universal_newlines)\s*=\s*True(?=\s*[,)])'
+            content = re.sub(pattern, add_errors, content, flags=re.IGNORECASE)
+            if content != original:
+                with open(path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                print(f"[+] 已修补 {path}")
+            else:
+                print(f"[+] {path} 无需修改")
+            PYEOF
+              else
+                echo "::warning::未找到 build_image/common.py，UnicodeDecodeError 修复跳过"
+                find . -name "common.py" -type f 2>/dev/null | head -10 || true
+              fi
+              set -e
+              # ===== 修复结束 =====
+
               tools/bazel build --disk_cache=/home/runner/.cache/bazel --config=fast $LTO_FLAG $FRAG_FLAG //common:kernel_aarch64_dist || exit 1
               strings ./bazel-bin/common/kernel_aarch64/Image | grep 'Linux version'
             fi
