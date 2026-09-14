@@ -1329,10 +1329,8 @@ jobs:
               KSU_GIT_VERSION=$(git rev-list --count HEAD)
               KSU_VERSION=$((30000 + KSU_GIT_VERSION))
               echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
-
-              if [ -f "kernel/Kbuild" ]; then
-                sed -i "s/DKSU_VERSION=16/DKSU_VERSION=${KSU_VERSION}/" kernel/Kbuild
-              fi
+              # Kbuild 支持 KSU_VERSION_OVERRIDE 变量覆盖版本号（比 sed 修改 Kbuild 更可靠）
+              echo "KSU_VERSION_OVERRIDE=$KSU_VERSION" >> $GITHUB_ENV
               cd ..
               ;;
             "SukiSU")
@@ -1386,10 +1384,8 @@ jobs:
               KSU_GIT_VERSION=$(git rev-list --count HEAD)
               KSU_VERSION=$((30000 + KSU_GIT_VERSION))
               echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
-
-              if [ -f "kernel/Kbuild" ]; then
-                sed -i "s/DKSU_VERSION=16/DKSU_VERSION=${KSU_VERSION}/" kernel/Kbuild
-              fi
+              # Kbuild 支持 KSU_VERSION_OVERRIDE 变量覆盖版本号（比 sed 修改 Kbuild 更可靠）
+              echo "KSU_VERSION_OVERRIDE=$KSU_VERSION" >> $GITHUB_ENV
 
               # ===== 下载 ApkeSU 预编译 ko 模块 =====
               mkdir -p prebuilt
