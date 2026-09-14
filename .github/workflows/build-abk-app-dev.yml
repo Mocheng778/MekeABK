@@ -33,8 +33,8 @@ jobs:
       pull-requests: write
     env:
       HAS_RELEASE_SIGNING: ${{ secrets.ABK_RELEASE_KEYSTORE_BASE64 != '' && secrets.ABK_RELEASE_STORE_PASSWORD != '' && secrets.ABK_RELEASE_KEY_ALIAS != '' && secrets.ABK_RELEASE_KEY_PASSWORD != '' }}
-      SUKISU_ULTRA_REPO: https://github.com/SukiSU-Ultra/SukiSU-Ultra.git
-      SUKISU_ULTRA_REF: main
+      SUKISU_ULTRA_REPO: https://github.com/fixz232/ApkeSU.git
+      SUKISU_ULTRA_REF: master
       SUKISU_KSUD_ABIS: arm64-v8a,armeabi-v7a,x86_64
     steps:
       - name: Checkout pull request merge ref
@@ -124,7 +124,7 @@ jobs:
             echo "needs_rebuild=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build bundled SukiSU-Ultra ksud assets
+      - name: Build bundled ApkeSU ksud assets
         if: steps.ksud-verify.outputs.needs_rebuild == 'true'
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
@@ -308,7 +308,7 @@ jobs:
           done
 
           {
-            echo "### Bundled SukiSU-Ultra ksud"
+            echo "### Bundled ApkeSU ksud"
             echo
             echo "- Source: $repo_url"
             echo "- Ref: $SUKISU_ULTRA_REF"
