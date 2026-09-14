@@ -93,6 +93,15 @@ fun StatusScreen(
             val ksuVersion = remember(state.rootGranted) {
                 if (state.rootGranted) RootUtils.getKsuVersion() else "N/A"
             }
+            val ksuLabel = remember(ksuVersion) {
+                val lower = ksuVersion.lowercase()
+                when {
+                    "apkesu" in lower -> "ApkeSU"
+                    "resukisu" in lower -> "ReSukiSU"
+                    "sukisu" in lower -> "SukiSU"
+                    else -> "KernelSU"
+                }
+            }
             val kernelVersion = remember(state.rootGranted) {
                 RootUtils.getKernelVersion()
             }
@@ -145,6 +154,7 @@ fun StatusScreen(
                 rootGranted = state.rootGranted,
                 forkReady = state.forkRepo != null && state.behindBy <= 0,
                 ksuVersion = ksuVersion,
+                ksuLabel = ksuLabel,
                 buildStatus = state.buildStatus
             )
 
@@ -500,6 +510,7 @@ private fun StatusMetricGrid(
     rootGranted: Boolean,
     forkReady: Boolean,
     ksuVersion: String,
+    ksuLabel: String,
     buildStatus: BuildStatus
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -521,7 +532,7 @@ private fun StatusMetricGrid(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             StatusMetricCard(
-                label = "KernelSU",
+                label = ksuLabel,
                 value = if (ksuVersion == "N/A") stringResource(R.string.status_not_detected) else stringResource(R.string.status_detected),
                 icon = Icons.Default.Shield,
                 color = if (ksuVersion == "N/A") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,

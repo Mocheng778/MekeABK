@@ -1643,6 +1643,7 @@ object RootUtils {
     )
 
     val ABK_LKM_VARIANTS = listOf(
+        AbkLkmVariant("apkesu", "ApkeSU"),
         AbkLkmVariant("kernelsu", "KernelSU"),
         AbkLkmVariant("sukisu", "SukiSU"),
         AbkLkmVariant("resukisu", "ReSukiSU")
@@ -1983,13 +1984,38 @@ object RootUtils {
                         .map { it.trim() }
                         .filter { it.isNotBlank() }
                         .distinct()
-                    val variant = inferManagerVariant(version).ifBlank { "KernelSU" }
+                    // ApkeSU ksud exposes the kernel UAPI level via `debug info`.
+                    // Use it to recognize ApkeSU (uapi 4) even when --version only
+                    // prints a numeric version name with no variant keyword.
+                    val debugInfo = execWithShell(
+                        shell,
+                        withManagerShellHelpers(
+                            "abk_exec_ksud $safeKsud debug info 2>/dev/null || true"
+                        ),
+                        normalizeOutput = false
+                    ).output.joinToString("\n")
+                    val shellUapi = Regex("(?m)^uapi_version:\\s*(\\d+)")
+                        .find(debugInfo)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+                    var variant = inferManagerVariant(version).ifBlank { "KernelSU" }
+                    val lowerVersion = version.lowercase()
+                    if ((variant == "KernelSU") && shellUapi >= 4 &&
+                        !lowerVersion.contains("sukisu") &&
+                        !lowerVersion.contains("resukisu")
+                    ) {
+                        variant = "ApkeSU"
+                    }
+                    val displayVersion = when {
+                        version.isBlank() -> nativeRuntime?.version.orEmpty()
+                        shellUapi > 0 && !version.contains("uapi:") ->
+                            "$version (uapi: $shellUapi)"
+                        else -> version
+                    }
                     ManagerRuntimeProbe(
                         active = true,
                         displayName = nativeRuntime?.displayName?.takeIf { it.isNotBlank() } ?: variant,
                         variant = nativeRuntime?.variant?.takeIf { it.isNotBlank() } ?: variant,
                         backend = "ksud",
-                        version = version.ifBlank { nativeRuntime?.version.orEmpty() },
+                        version = displayVersion,
                         workMode = nativeRuntime?.workMode.orEmpty(),
                         capabilities = capabilities.ifEmpty { listOf("root_shell", "modules") },
                         diagnostics = (
@@ -2019,14 +2045,40 @@ object RootUtils {
 
     private fun detectNativeManagerRuntime(): ManagerRuntimeProbe? {
         val status = AbkKsuNative.status() ?: return null
+        val lowerFull = status.fullVersion.lowercase()
+        val explicitSukiOrReSuki =
+            lowerFull.contains("sukisu") || lowerFull.contains("resukisu")
+        // Resolve the variant first. ApkeSU kernels report UAPI level 4 and do not
+        // implement ABK's full-version ioctl, so the version string carries no
+        // variant keyword; trust the UAPI level unless an explicit SukiSU/ReSukiSU
+        // identity is present.
+        var nativeVariant = inferManagerVariant(status.fullVersion)
+        if ((nativeVariant.isBlank() || nativeVariant == "KernelSU") &&
+            status.uapiVersion >= 4 && !explicitSukiOrReSuki
+        ) {
+            nativeVariant = "ApkeSU"
+        }
+        nativeVariant = nativeVariant.ifBlank { "KernelSU" }
+        // Build a human-readable version line. ApkeSU kernels leave fullVersion
+        // blank, so synthesize "ApkeSU (uapi: N)"; otherwise tag the UAPI level on.
+        val uapiSuffix = if (status.uapiVersion > 0) " (uapi: ${status.uapiVersion})" else ""
+        val identity = when {
+            status.fullVersion.isNotBlank() -> status.fullVersion
+            nativeVariant == "ApkeSU" -> "ApkeSU$uapiSuffix"
+            else -> ""
+        }
+        val taggedFullVersion = when {
+            identity.isBlank() -> ""
+            status.uapiVersion > 0 && !identity.contains("uapi:") -> "$identity$uapiSuffix"
+            else -> identity
+        }
         val versionText = listOf(
-            status.fullVersion,
+            taggedFullVersion,
             "kernel ${status.version}",
             status.hookType
         )
             .filter { it.isNotBlank() }
             .joinToString(" · ")
-        val nativeVariant = inferManagerVariant(versionText).ifBlank { "KernelSU" }
         if (!status.isManager) {
             return ManagerRuntimeProbe(
                 active = false,
@@ -2608,6 +2660,7 @@ object RootUtils {
     private fun inferManagerVariant(version: String): String {
         val lower = version.lowercase()
         return when {
+            "apkesu" in lower -> "ApkeSU"
             "resukisu" in lower -> "ReSukiSU"
             "sukisu" in lower -> "SukiSU"
             "kernelsu" in lower || version.isNotBlank() -> "KernelSU"

@@ -4328,6 +4328,11 @@ class MainViewModel @JvmOverloads constructor(
                         title = "SukiSU",
                         items = buildSukiSuSettings()
                     )
+                    manager.isApkeSu() -> ManagerSettingsLoad(
+                        backend = "apkesu",
+                        title = "ApkeSU",
+                        items = buildOfficialKernelSuSettings()
+                    )
                     manager.isOfficialKernelSu() -> ManagerSettingsLoad(
                         backend = "kernelsu",
                         title = "KernelSU",
@@ -4666,6 +4671,11 @@ class MainViewModel @JvmOverloads constructor(
     private fun RootUtils.ManagerRuntimeProbe.isReSukiSu(): Boolean {
         val text = listOf(displayName, variant, version).joinToString(" ").lowercase()
         return "resukisu" in text
+    }
+
+    private fun RootUtils.ManagerRuntimeProbe.isApkeSu(): Boolean {
+        val text = listOf(displayName, variant, version).joinToString(" ").lowercase()
+        return "apkesu" in text || "uapi: 4" in text || "uapi:4" in text
     }
 
     private fun RootUtils.ManagerRuntimeProbe.isSukiSu(): Boolean {

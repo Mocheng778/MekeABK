@@ -1339,6 +1339,7 @@ internal fun preferredLkmKmiSelection(
 private fun String.defaultLkmVariantId(): String {
     val lower = lowercase()
     return when {
+        "apkesu" in lower -> "apkesu"
         "resukisu" in lower -> "resukisu"
         "sukisu" in lower -> "sukisu"
         else -> "kernelsu"

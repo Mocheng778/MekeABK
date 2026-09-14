@@ -37,6 +37,12 @@ Java_com_abk_kernel_utils_AbkKsuNative_getVersion(JNIEnv *env, jobject) {
 
 extern "C"
 JNIEXPORT jint JNICALL
+Java_com_abk_kernel_utils_AbkKsuNative_getUapiVersion(JNIEnv *env, jobject) {
+    return static_cast<jint>(get_uapi_version());
+}
+
+extern "C"
+JNIEXPORT jint JNICALL
 Java_com_abk_kernel_utils_AbkKsuNative_getSuperuserCount(JNIEnv *env, jobject) {
     struct ksu_new_get_allow_list_cmd cmd = {
         .count = 0

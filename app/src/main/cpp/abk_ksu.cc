@@ -145,6 +145,11 @@ uint32_t get_version() {
     return info.version;
 }
 
+uint32_t get_uapi_version() {
+    auto info = get_info();
+    return info.uapi_version;
+}
+
 bool has_driver_fd() {
     return ensure_driver_fd() >= 0;
 }

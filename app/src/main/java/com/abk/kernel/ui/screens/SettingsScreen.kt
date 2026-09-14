@@ -3001,6 +3001,7 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
             stringResource(R.string.settings_theme) -> stringResource(R.string.settings_group_theme_desc)
             "ReSukiSU" -> stringResource(R.string.settings_group_backend_desc, "ReSukiSU")
             "SukiSU" -> stringResource(R.string.settings_group_backend_desc, "SukiSU")
+            "ApkeSU" -> stringResource(R.string.settings_group_backend_desc, "ApkeSU")
             "KernelSU" -> stringResource(R.string.settings_group_backend_desc, "KernelSU")
             stringResource(R.string.settings_manager_settings) -> stringResource(R.string.settings_group_manager_settings_desc)
             stringResource(R.string.settings_kernel_capabilities) -> stringResource(R.string.settings_group_kernel_capabilities_desc)
@@ -3026,7 +3027,7 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
             stringResource(R.string.settings_navigation) -> Icons.Default.ArrowBack
             stringResource(R.string.settings_language) -> Icons.Default.Language
             stringResource(R.string.settings_theme) -> Icons.Default.Palette
-            "ReSukiSU", "SukiSU", "KernelSU" -> Icons.Default.AdminPanelSettings
+            "ReSukiSU", "SukiSU", "ApkeSU", "KernelSU" -> Icons.Default.AdminPanelSettings
             stringResource(R.string.settings_manager_settings) -> Icons.Default.AdminPanelSettings
             stringResource(R.string.settings_kernel_capabilities) -> Icons.Default.Tune
             stringResource(R.string.settings_tcp_congestion_control) -> Icons.Default.Tune

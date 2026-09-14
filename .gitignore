@@ -40,6 +40,10 @@ desktop/target/
 *.tmp
 *.log
 
+# Keep the prebuilt ApkeSU LKM artifacts that are shipped in-repo
+!app/src/main/assets/abk_lkm/apkesu/
+!app/src/main/assets/abk_lkm/apkesu/*.ko
+
 # Kernel build artifacts
 out/
 Image

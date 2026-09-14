@@ -21,6 +21,7 @@ object AbkKsuNative {
 
     external fun hasDriverFd(): Boolean
     external fun getVersion(): Int
+    external fun getUapiVersion(): Int
     external fun isSafeMode(): Boolean
     external fun isLkmMode(): Boolean
     external fun isLateLoadMode(): Boolean
@@ -69,6 +70,7 @@ object AbkKsuNative {
             val manager = isManager()
             NativeStatus(
                 version = kernelVersion,
+                uapiVersion = runCatching { getUapiVersion() }.getOrDefault(0),
                 fullVersion = getFullVersion().trim(),
                 hookType = getHookType().trim(),
                 isManager = manager,
@@ -163,6 +165,7 @@ object AbkKsuNative {
 
     data class NativeStatus(
         val version: Int,
+        val uapiVersion: Int,
         val fullVersion: String,
         val hookType: String,
         val isManager: Boolean,
