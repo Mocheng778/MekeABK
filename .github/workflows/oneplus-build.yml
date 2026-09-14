@@ -204,7 +204,7 @@ jobs:
           if [[ "$CPU" == mt* && "$USE_PROXY_OPTIMIZATION" = "true" ]]; then
             echo "::warning::MTK 分支已强制关闭代理相关网络优化。"
           fi
-          if [ "$USE_KPM" = "true" ] && [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "ReSukiSU" ]; then
+          if [ "$USE_KPM" = "true" ] && [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "ReSukiSU" ] && [ "$KSU_VARIANT" != "ApkeSU" ]; then
             echo "::error::Official / None 变体不支持 KPM，请关闭 KPM 后重试。"
             exit 1
           fi
@@ -349,6 +349,47 @@ jobs:
                 ;;
               ReSukiSU)
                 curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s main
+                ;;
+              ApkeSU)
+                echo "添加 ApkeSU..."
+                curl -LSs "https://raw.githubusercontent.com/fixz232/ApkeSU/ApkeSU/kernel/setup.sh" | bash -s ApkeSU
+
+                # ===== 修复 ApkeSU uapi 头文件 symlink 解析问题 =====
+                if [ -d "KernelSU/uapi" ]; then
+                  rm -f KernelSU/kernel/include/uapi
+                  mkdir -p KernelSU/kernel/include/uapi
+                  cp -f KernelSU/uapi/*.h KernelSU/kernel/include/uapi/
+                  echo "[+] ApkeSU uapi 头文件已复制到 KernelSU/kernel/include/uapi/"
+                else
+                  echo "::warning::KernelSU/uapi 目录不存在，跳过 uapi 头文件修复"
+                fi
+
+                # ===== 下载 ApkeSU 预编译 ko 模块 =====
+                echo "下载 ApkeSU 预编译 ko 模块..."
+                APKESU_KO_BASE="https://raw.githubusercontent.com/fixz232/ApkeSU/ApkeSU/userspace/ksud/bin/aarch64"
+                KO_KERNEL_NAME="${ANDROID_VERSION}-${KERNEL_VERSION}_kernelsu.ko"
+                KO_PATHMASK_NAME="${ANDROID_VERSION}-${KERNEL_VERSION}_pathmask.ko"
+                mkdir -p KernelSU/prebuilt
+                if curl -sL -f -o "KernelSU/prebuilt/kernelsu.ko" "${APKESU_KO_BASE}/${KO_KERNEL_NAME}"; then
+                  echo "[+] 已下载 ${KO_KERNEL_NAME}"
+                else
+                  echo "::warning::下载 ${KO_KERNEL_NAME} 失败"
+                fi
+                if curl -sL -f -o "KernelSU/prebuilt/pathmask.ko" "${APKESU_KO_BASE}/${KO_PATHMASK_NAME}"; then
+                  echo "[+] 已下载 ${KO_PATHMASK_NAME} (pathmask/SUSFS)"
+                else
+                  echo "::warning::下载 ${KO_PATHMASK_NAME} 失败"
+                fi
+                ls -lh KernelSU/prebuilt/ || true
+
+                cd KernelSU
+                KSU_GIT_VERSION=$(git rev-list --count HEAD)
+                KSU_VERSION=$((30000 + KSU_GIT_VERSION))
+                echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
+                if [ -f "kernel/Kbuild" ]; then
+                  sed -i "s/DKSU_VERSION=16/DKSU_VERSION=${KSU_VERSION}/" kernel/Kbuild
+                fi
+                cd ..
                 ;;
               *)
                 echo "::error::未知 KSU 变体: $KSU_VARIANT"
@@ -584,8 +625,8 @@ jobs:
               raise SystemExit(f"{root} does not contain a supported SELinux compatibility source file")
           PY
 
-      - name: 修复 SukiSU/ReSukiSU sulog 兼容
-        if: ${{ inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' }}
+      - name: 修复 SukiSU/ReSukiSU/ApkeSU sulog 兼容
+        if: ${{ inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -601,7 +642,7 @@ jobs:
           done
 
           if [ -z "$KSU_BUILD_DIR" ]; then
-            echo "::warning::未找到 SukiSU/ReSukiSU 编译目录，跳过 sulog 兼容修复。"
+            echo "::warning::未找到 SukiSU/ReSukiSU/ApkeSU 编译目录，跳过 sulog 兼容修复。"
             exit 0
           fi
 
@@ -667,8 +708,8 @@ jobs:
               raise SystemExit(f"{path} contains an incomplete ABK ksu_sulog_capture compatibility block")
           PY
 
-      - name: 修复 SukiSU/ReSukiSU android16-6.12 源码兼容
-        if: ${{ (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU') && inputs.android_version == 'android16' && inputs.kernel_version == '6.12' }}
+      - name: 修复 SukiSU/ReSukiSU/ApkeSU android16-6.12 源码兼容
+        if: ${{ (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU') && inputs.android_version == 'android16' && inputs.kernel_version == '6.12' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -684,7 +725,7 @@ jobs:
           done
 
           if [ -z "$KSU_BUILD_DIR" ]; then
-            echo "::error::未找到实际 SukiSU/ReSukiSU 编译目录"
+            echo "::error::未找到实际 SukiSU/ReSukiSU/ApkeSU 编译目录"
             exit 1
           fi
 
@@ -750,11 +791,11 @@ jobs:
                       print("已适配 android16-6.12 security_add_hooks() 的 struct lsm_id 参数")
 
           if not changed:
-              print("SukiSU/ReSukiSU android16-6.12 专项兼容修复无需修改。")
+              print("SukiSU/ReSukiSU/ApkeSU android16-6.12 专项兼容修复无需修改。")
           PY
 
-      - name: 注入 SukiSU/ReSukiSU KPM Kconfig
-        if: ${{ inputs.use_kpm && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU') }}
+      - name: 注入 SukiSU/ReSukiSU/ApkeSU KPM Kconfig
+        if: ${{ inputs.use_kpm && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU') }}
         shell: bash
         run: |
           set -euo pipefail
@@ -871,7 +912,7 @@ jobs:
           EOF
 
           kpm_config_supported="false"
-          if [ "$KSU_VARIANT" = "SukiSU" ] || [ "$KSU_VARIANT" = "ReSukiSU" ]; then
+          if [ "$KSU_VARIANT" = "SukiSU" ] || [ "$KSU_VARIANT" = "ReSukiSU" ] || [ "$KSU_VARIANT" = "ApkeSU" ]; then
             if [ "$kpm_kconfig_ready" = "true" ] && [ -f "$kpm_kconfig_path" ]; then
               kpm_config_supported="true"
             else
@@ -900,7 +941,7 @@ jobs:
           elif [ "$EFFECTIVE_KPM" = "true" ]; then
             echo "::error::请求启用 KPM，但当前 $KSU_VARIANT 源码树仍未提供 config KPM。"
             exit 1
-          elif [ "$KSU_VARIANT" = "SukiSU" ] || [ "$KSU_VARIANT" = "ReSukiSU" ]; then
+          elif [ "$KSU_VARIANT" = "SukiSU" ] || [ "$KSU_VARIANT" = "ReSukiSU" ] || [ "$KSU_VARIANT" = "ApkeSU" ]; then
             if [ "$kpm_config_supported" = "true" ]; then
               echo "# CONFIG_KPM is not set" >> "$DEFCONFIG_PATH"
               echo "检测到 KPM Kconfig，已显式关闭 CONFIG_KPM。"
@@ -1024,6 +1065,7 @@ jobs:
         run: |
           set -euo pipefail
           WORKSPACE="$GITHUB_WORKSPACE/oneplus_workspace"
+          KERNEL_ROOT="$WORKSPACE/kernel_workspace/kernel_platform"
           cd "$WORKSPACE"
           git clone https://github.com/Xiaomichael/AnyKernel3 --depth=1
           rm -rf AnyKernel3/.git
@@ -1046,6 +1088,17 @@ jobs:
             mv oImage "$WORKSPACE/AnyKernel3/Image"
             cd "$WORKSPACE"
             rm -rf kpm_patch_temp
+          fi
+
+          if [ "$KSU_VARIANT" = "ApkeSU" ]; then
+            if [ -d "$KERNEL_ROOT/KernelSU/prebuilt" ]; then
+              echo "复制 ApkeSU ko 模块到 AnyKernel3..."
+              mkdir -p AnyKernel3/modules
+              cp -v "$KERNEL_ROOT/KernelSU/prebuilt/"*.ko AnyKernel3/modules/ 2>/dev/null || echo "无 ko 文件可复制"
+              ls -lh AnyKernel3/modules/ || true
+            else
+              echo "未找到 ApkeSU prebuilt 目录，跳过 ko 模块复制"
+            fi
           fi
 
           case "$KSU_VARIANT" in

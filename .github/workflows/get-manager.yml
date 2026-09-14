@@ -124,6 +124,8 @@ jobs:
             KSU_VERSION=$((30700 + KSU_GIT_VERSION))
           elif [ "${{ inputs.kernelsu_variant }}" == "Official" ]; then
             KSU_VERSION=$((30000 + KSU_GIT_VERSION))
+          elif [ "${{ inputs.kernelsu_variant }}" == "ApkeSU" ]; then
+            KSU_VERSION=$((30000 + KSU_GIT_VERSION))
           fi
           echo $KSU_VERSION
           echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
