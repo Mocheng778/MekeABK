@@ -421,6 +421,7 @@
     <string name="flash_kernel_resukisu">ReSukiSU</string>
     <string name="flash_kernel_sukisu">SukiSU</string>
     <string name="flash_kernel_official">Official</string>
+    <string name="flash_kernel_apkesu">ApkeSU</string>
     <string name="flash_kernel_none">None</string>
     <string name="flash_cancel_build">Cancel build</string>
     <string name="flash_building_title">Build in progress</string>
@@ -434,6 +435,7 @@
     <string name="flash_filter_kernel_resukisu">ReSukiSU</string>
     <string name="flash_filter_kernel_sukisu">SukiSU</string>
     <string name="flash_filter_kernel_official">Official KernelSU</string>
+    <string name="flash_filter_kernel_apkesu">ApkeSU</string>
     <string name="flash_filter_kernel_none">No KSU</string>
     <string name="flash_filter_manager">Manager</string>
     <string name="flash_filter_manager_release">Release</string>

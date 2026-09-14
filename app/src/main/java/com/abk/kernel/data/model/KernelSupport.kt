@@ -290,7 +290,7 @@ object KernelSupport {
         val normalizedKsuBranch = normalizeKsuBranch(
             if (isOnePlus || ksuVariant == KSU_VARIANT_NONE) KSU_BRANCH_STABLE else config.kernelsuBranch
         )
-        val onePlusKpmSupported = ksuVariant in setOf(KSU_VARIANT_SUKISU, KSU_VARIANT_RESUKISU)
+        val onePlusKpmSupported = ksuVariant in setOf(KSU_VARIANT_SUKISU, KSU_VARIANT_RESUKISU, KSU_VARIANT_APKESU)
         val gkiKpmSupported = isKpmSupported(BUILD_TARGET_GKI, ksuVariant, normalizedKsuBranch)
         val onePlusProxyAllowed = !onePlusCpu.startsWith("mt")
         val onePlusSusfsEnabled = onePlusSusfsSupported(line.androidVersion, line.kernelVersion)
@@ -483,6 +483,7 @@ object KernelSupport {
             KSU_VARIANT_OFFICIAL.lowercase() -> KSU_VARIANT_OFFICIAL
             KSU_VARIANT_SUKISU.lowercase() -> KSU_VARIANT_SUKISU
             KSU_VARIANT_RESUKISU.lowercase() -> KSU_VARIANT_RESUKISU
+            KSU_VARIANT_APKESU.lowercase() -> KSU_VARIANT_APKESU
             KSU_VARIANT_NONE.lowercase(), "无" -> KSU_VARIANT_NONE
             else -> KSU_VARIANT_RESUKISU
         }
@@ -506,7 +507,7 @@ object KernelSupport {
             normalizedVariant == KSU_VARIANT_NONE -> false
             normalizedVariant == KSU_VARIANT_OFFICIAL -> false
             normalizedTarget == BUILD_TARGET_ONEPLUS ->
-                normalizedVariant in setOf(KSU_VARIANT_SUKISU, KSU_VARIANT_RESUKISU)
+                normalizedVariant in setOf(KSU_VARIANT_SUKISU, KSU_VARIANT_RESUKISU, KSU_VARIANT_APKESU)
             normalizedVariant == KSU_VARIANT_RESUKISU &&
                 normalizedBranch !in setOf(KSU_BRANCH_STABLE, KSU_BRANCH_CUSTOM) -> false
             else -> true

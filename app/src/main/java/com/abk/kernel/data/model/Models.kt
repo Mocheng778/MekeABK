@@ -588,6 +588,7 @@ const val KSU_VARIANT_NONE = "None"
 const val KSU_VARIANT_OFFICIAL = "Official"
 const val KSU_VARIANT_SUKISU = "SukiSU"
 const val KSU_VARIANT_RESUKISU = "ReSukiSU"
+const val KSU_VARIANT_APKESU = "ApkeSU"
 const val BUILD_TARGET_GKI = "gki"
 const val BUILD_TARGET_CUSTOM_SOURCE = "custom_source"
 const val BUILD_TARGET_ONEPLUS = "oneplus"
@@ -605,13 +606,15 @@ val KSU_VARIANT_OPTIONS = listOf(
     KSU_VARIANT_OFFICIAL,
     KSU_VARIANT_SUKISU,
     KSU_VARIANT_RESUKISU,
-    KSU_VARIANT_NONE
+    KSU_VARIANT_NONE,
+    KSU_VARIANT_APKESU
 )
 val ONEPLUS_KSU_VARIANT_OPTIONS = listOf(
     KSU_VARIANT_OFFICIAL,
     KSU_VARIANT_SUKISU,
     KSU_VARIANT_RESUKISU,
-    KSU_VARIANT_NONE
+    KSU_VARIANT_NONE,
+    KSU_VARIANT_APKESU
 )
 
 // App-level build config model (mirrors kernel-custom.yml inputs)

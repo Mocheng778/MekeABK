@@ -372,6 +372,7 @@ internal fun limitWorkflowGroupsForDisplay(
 internal fun FlashFilterKernelKind.labelRes() = when (this) {
     FlashFilterKernelKind.ResuKisu -> R.string.flash_filter_kernel_resukisu
     FlashFilterKernelKind.SukiSu -> R.string.flash_filter_kernel_sukisu
+    FlashFilterKernelKind.ApkeSu -> R.string.flash_filter_kernel_apkesu
     FlashFilterKernelKind.Official -> R.string.flash_filter_kernel_official
     FlashFilterKernelKind.None -> R.string.flash_filter_kernel_none
 }
@@ -380,6 +381,7 @@ internal fun FlashFilterKernelKind.labelRes() = when (this) {
 internal fun FlashFilterKernelKind.shortLabelRes() = when (this) {
     FlashFilterKernelKind.ResuKisu -> R.string.flash_kernel_resukisu
     FlashFilterKernelKind.SukiSu -> R.string.flash_kernel_sukisu
+    FlashFilterKernelKind.ApkeSu -> R.string.flash_kernel_apkesu
     FlashFilterKernelKind.Official -> R.string.flash_kernel_official
     FlashFilterKernelKind.None -> R.string.flash_kernel_none
 }

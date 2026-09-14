@@ -8,7 +8,7 @@ import com.abk.kernel.data.model.isManagerDevBuild
 import com.abk.kernel.data.model.isPureManagerBuild
 import com.abk.kernel.data.model.workflowNameIndicatesManagerDev
 
-enum class FlashFilterKernelKind { ResuKisu, SukiSu, Official, None }
+enum class FlashFilterKernelKind { ResuKisu, SukiSu, ApkeSu, Official, None }
 
 enum class FlashFilterManagerKind { Release, Dev }
 
@@ -79,6 +79,7 @@ object FlashWorkflowFilter {
         return when {
             "resuki" in v || "re-suki" in v || "resukisu" in v -> FlashFilterKernelKind.ResuKisu
             "sukisu" in v -> FlashFilterKernelKind.SukiSu
+            "apkesu" in v -> FlashFilterKernelKind.ApkeSu
             "kernelsu" in v || "official" in v -> FlashFilterKernelKind.Official
             else -> FlashFilterKernelKind.None
         }
