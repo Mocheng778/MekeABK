@@ -1345,7 +1345,7 @@ jobs:
               ;;
             "ApkeSU")
               echo "添加 ApkeSU..."
-              curl -LSs "https://raw.githubusercontent.com/fixz232/ApkeSU/ApkeSU/kernel/setup.sh" | bash -s $BRANCH
+              curl -LSs "https://raw.githubusercontent.com/fixz232/ApkeSU/ApkeSU/kernel/setup.sh" | bash -s ApkeSU
 
               # ===== 修复 ApkeSU uapi 头文件 symlink 解析问题 =====
               # ApkeSU 的 kernel/include/uapi 是指向 ../../uapi 的 git symlink，
@@ -5629,6 +5629,56 @@ jobs:
 
               return changed
 
+          def repair_apkesu_sucompat(path):
+              """修复旧版 ApkeSU sucompat.c 的编译错误：
+              1. struct user_arg_ptr 类型不完整 → 补充 linux/syscalls.h
+              2. ksu_sulog_capture_sucompat 指针类型不兼容 → 修正 cast
+              3. ksu_handle_execveat_ksud 未声明 → 补充前向声明
+              """
+              text = path.read_text()
+              original = text
+              changed = False
+
+              has_user_arg_ptr = "struct user_arg_ptr" in text
+              has_execveat_ksud = "ksu_handle_execveat_ksud" in text
+              if not (has_user_arg_ptr or has_execveat_ksud):
+                  return False
+
+              # 1. 补充 linux/syscalls.h（定义 struct user_arg_ptr）
+              if has_user_arg_ptr and "#include <linux/syscalls.h>" not in text:
+                  anchor = "#include <linux/sched/task_stack.h>"
+                  if anchor in text:
+                      text = text.replace(anchor, anchor + "\n#include <linux/syscalls.h>", 1)
+                      changed = True
+                      print(f"  已补充 {path} 的 linux/syscalls.h（struct user_arg_ptr 完整定义）")
+
+              # 2. 修正 ksu_sulog_capture_sucompat 的 argv_user cast
+              if "ksu_sulog_capture_sucompat" in text and "(struct user_arg_ptr *)argv_user" in text:
+                  text = text.replace(
+                      "(struct user_arg_ptr *)argv_user",
+                      "(const char __user *const __user *)argv_user"
+                  )
+                  changed = True
+                  print(f"  已修正 {path} 的 ksu_sulog_capture_sucompat argv_user 指针类型")
+
+              # 3. 补充 ksu_handle_execveat_ksud 前向声明
+              if has_execveat_ksud and "long ksu_handle_execveat_ksud(" not in text:
+                  decl = (
+                      "\n/* ABK: forward declaration for older ApkeSU sucompat.c */\n"
+                      "long ksu_handle_execveat_ksud(int fd, const char __user *filename,\n"
+                      "    const char __user *const __user *argv,\n"
+                      "    const char __user *const __user *envp, int flags);\n"
+                  )
+                  anchor = "#define SU_PATH"
+                  if anchor in text:
+                      text = text.replace(anchor, decl + "\n" + anchor, 1)
+                      changed = True
+                      print(f"  已补充 {path} 的 ksu_handle_execveat_ksud 前向声明")
+
+              if changed:
+                  path.write_text(text)
+              return changed
+
           candidates = []
           for base in (Path("common/drivers/kernelsu"), Path("drivers/kernelsu"), Path("KernelSU/kernel")):
               if base.exists() and base not in candidates:
@@ -5645,6 +5695,7 @@ jobs:
               sucompat_c = kernel_dir / "feature/sucompat.c"
               if sucompat_c.exists():
                   changed = repair_sucompat(sucompat_c) or changed
+                  changed = repair_apkesu_sucompat(sucompat_c) or changed
 
               sulog_event_c = kernel_dir / "sulog/event.c"
               if sulog_event_c.exists():

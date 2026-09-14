@@ -496,6 +496,82 @@ jobs:
         shell: bash
         run: python3 "$GITHUB_WORKSPACE/.github/scripts/ensure-ksu-compat.py" "$GITHUB_WORKSPACE/oneplus_workspace/kernel_workspace/kernel_platform"
 
+      - name: 修复 ApkeSU sucompat.c 源码兼容
+        if: ${{ inputs.ksu_variant == 'ApkeSU' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          KERNEL_ROOT="$GITHUB_WORKSPACE/oneplus_workspace/kernel_workspace/kernel_platform"
+
+          KSU_BUILD_DIR=""
+          for dir in common/drivers/kernelsu drivers/kernelsu KernelSU/kernel; do
+            if [ -d "$KERNEL_ROOT/$dir" ]; then
+              KSU_BUILD_DIR="$KERNEL_ROOT/$dir"
+              break
+            fi
+          done
+
+          if [ -z "$KSU_BUILD_DIR" ]; then
+            echo "::warning::未找到 ApkeSU 编译目录，跳过 sucompat.c 兼容修复。"
+            exit 0
+          fi
+
+          python3 - "$KSU_BUILD_DIR/feature/sucompat.c" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          if not path.exists():
+              print(f"sucompat.c 不存在: {path}，跳过")
+              raise SystemExit(0)
+
+          text = path.read_text()
+          changed = False
+
+          has_user_arg_ptr = "struct user_arg_ptr" in text
+          has_execveat_ksud = "ksu_handle_execveat_ksud" in text
+          if not (has_user_arg_ptr or has_execveat_ksud):
+              print("sucompat.c 无需修复（当前版本无已知兼容性问题）")
+              raise SystemExit(0)
+
+          # 1. 补充 linux/syscalls.h（定义 struct user_arg_ptr）
+          if has_user_arg_ptr and "#include <linux/syscalls.h>" not in text:
+              anchor = "#include <linux/sched/task_stack.h>"
+              if anchor in text:
+                  text = text.replace(anchor, anchor + "\n#include <linux/syscalls.h>", 1)
+                  changed = True
+                  print("已补充 linux/syscalls.h（struct user_arg_ptr 完整定义）")
+
+          # 2. 修正 ksu_sulog_capture_sucompat 的 argv_user cast
+          if "ksu_sulog_capture_sucompat" in text and "(struct user_arg_ptr *)argv_user" in text:
+              text = text.replace(
+                  "(struct user_arg_ptr *)argv_user",
+                  "(const char __user *const __user *)argv_user"
+              )
+              changed = True
+              print("已修正 ksu_sulog_capture_sucompat argv_user 指针类型")
+
+          # 3. 补充 ksu_handle_execveat_ksud 前向声明
+          if has_execveat_ksud and "long ksu_handle_execveat_ksud(" not in text:
+              decl = (
+                  "\n/* ABK: forward declaration for older ApkeSU sucompat.c */\n"
+                  "long ksu_handle_execveat_ksud(int fd, const char __user *filename,\n"
+                  "    const char __user *const __user *argv,\n"
+                  "    const char __user *const __user *envp, int flags);\n"
+              )
+              anchor = "#define SU_PATH"
+              if anchor in text:
+                  text = text.replace(anchor, decl + "\n" + anchor, 1)
+                  changed = True
+                  print("已补充 ksu_handle_execveat_ksud 前向声明")
+
+          if changed:
+              path.write_text(text)
+              print(f"sucompat.c 兼容修复完成: {path}")
+          else:
+              print("sucompat.c 无需修改")
+          PY
+
       - name: 修复 SukiSU SUSFS 源码兼容
         if: ${{ inputs.ksu_variant == 'SukiSU' }}
         shell: bash
