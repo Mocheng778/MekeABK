@@ -354,6 +354,14 @@ jobs:
                 echo "添加 ApkeSU..."
                 curl -LSs "https://raw.githubusercontent.com/fixz232/ApkeSU/ApkeSU/kernel/setup.sh" | bash -s ApkeSU
 
+                # ===== 强制同步到 ApkeSU 分支最新提交（避免旧版 sucompat API 不匹配）=====
+                cd KernelSU
+                git fetch origin ApkeSU --depth=1 2>/dev/null || git fetch origin ApkeSU
+                git reset --hard origin/ApkeSU
+                echo "[+] ApkeSU 已强制同步到: $(git rev-parse --short=12 HEAD)"
+                cd ..
+                # ===== 强制同步结束 =====
+
                 # ===== 修复 ApkeSU uapi 头文件 symlink 解析问题 =====
                 if [ -d "KernelSU/uapi" ]; then
                   rm -f KernelSU/kernel/include/uapi
