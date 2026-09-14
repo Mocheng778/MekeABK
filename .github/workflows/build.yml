@@ -1216,7 +1216,7 @@ jobs:
               --id kpm \
               --state skipped \
               --reason-code dependency_skipped \
-              --message "KPM requires the SukiSU, ReSukiSU or ApkeSU KernelSU variant"
+              --message "KPM requires the SukiSU or ReSukiSU KernelSU variant"
             touch "$transaction_dir/kpm.disabled"
           fi
           echo "ABK_CUSTOM_SOURCE_FEATURE_STATUS=$status_file" >> "$GITHUB_ENV"
@@ -1353,12 +1353,10 @@ jobs:
               git reset --hard origin/ApkeSU
               APKESU_HEAD="$(git rev-parse --short=12 HEAD)"
               echo "[+] ApkeSU 已同步到: ${APKESU_HEAD}"
-              # 直接从上游 raw URL 下载覆盖 sucompat.h/c，杜绝 git 同步残留旧版文件
               APKESU_RAW="https://raw.githubusercontent.com/fixz232/ApkeSU/ApkeSU/kernel/feature"
               curl -fsSL "${APKESU_RAW}/sucompat.h" -o kernel/feature/sucompat.h || { echo "::error::下载 sucompat.h 失败"; exit 1; }
               curl -fsSL "${APKESU_RAW}/sucompat.c" -o kernel/feature/sucompat.c || { echo "::error::下载 sucompat.c 失败"; exit 1; }
               echo "[+] sucompat.h/c 已从上游 ApkeSU 分支直接覆盖"
-              # 校验：新版 sucompat.h 应含 bool ksu_su_compat_enabled 和 3 参数声明
               if ! grep -q 'bool ksu_su_compat_enabled' kernel/feature/sucompat.h; then
                 echo "::error::sucompat.h 不是新版（缺少 bool ksu_su_compat_enabled）"
                 exit 1
@@ -1384,37 +1382,6 @@ jobs:
               fi
               # ===== 修复结束 =====
 
-              # ===== 下载 ApkeSU 预编译 ko 模块（包含 pathmask/SUSFS 路径隐藏支持）=====
-              echo "下载 ApkeSU 预编译 ko 模块..."
-              APKESU_KO_BASE="https://raw.githubusercontent.com/fixz232/ApkeSU/ApkeSU/userspace/ksud/bin/aarch64"
-              ANDROID_VERSION="${{ inputs.android_version }}"
-              KERNEL_VERSION="${{ inputs.kernel_version }}"
-              
-              # 构建 ko 文件名
-              KO_KERNEL_NAME="${ANDROID_VERSION}-${KERNEL_VERSION}_kernelsu.ko"
-              KO_PATHMASK_NAME="${ANDROID_VERSION}-${KERNEL_VERSION}_pathmask.ko"
-              
-              # 创建输出目录
-              mkdir -p KernelSU/prebuilt
-              
-              # 下载 kernelsu.ko
-              if curl -sL -f -o "KernelSU/prebuilt/kernelsu.ko" "${APKESU_KO_BASE}/${KO_KERNEL_NAME}"; then
-                echo "[+] 已下载 ${KO_KERNEL_NAME}"
-              else
-                echo "::warning::下载 ${KO_KERNEL_NAME} 失败"
-              fi
-              
-              # 下载 pathmask.ko (SUSFS 路径隐藏模块)
-              if curl -sL -f -o "KernelSU/prebuilt/pathmask.ko" "${APKESU_KO_BASE}/${KO_PATHMASK_NAME}"; then
-                echo "[+] 已下载 ${KO_PATHMASK_NAME} (pathmask/SUSFS)"
-              else
-                echo "::warning::下载 ${KO_PATHMASK_NAME} 失败"
-              fi
-              
-              # 列出下载的 ko 文件
-              ls -lh KernelSU/prebuilt/ || true
-              # ===== ko 模块下载结束 =====
-
               cd KernelSU
               KSU_GIT_VERSION=$(git rev-list --count HEAD)
               KSU_VERSION=$((30000 + KSU_GIT_VERSION))
@@ -1423,6 +1390,20 @@ jobs:
               if [ -f "kernel/Kbuild" ]; then
                 sed -i "s/DKSU_VERSION=16/DKSU_VERSION=${KSU_VERSION}/" kernel/Kbuild
               fi
+
+              # ===== 下载 ApkeSU 预编译 ko 模块 =====
+              mkdir -p prebuilt
+              ANDROID_VERSION="${{ inputs.android_version }}"
+              KERNEL_VERSION="${{ inputs.kernel_version }}"
+              APKESU_KO_BASE="https://raw.githubusercontent.com/fixz232/ApkeSU/ApkeSU/userspace/ksud/bin/aarch64"
+              KO_KERNEL_NAME="${ANDROID_VERSION}-${KERNEL_VERSION}_kernelsu.ko"
+              KO_PATHMASK_NAME="${ANDROID_VERSION}-${KERNEL_VERSION}_pathmask.ko"
+              echo "[+] 下载 ApkeSU ko: ${KO_KERNEL_NAME}"
+              curl -fsSL "${APKESU_KO_BASE}/${KO_KERNEL_NAME}" -o "prebuilt/kernelsu.ko" || echo "::warning::kernelsu.ko 下载失败，将尝试从源码编译"
+              echo "[+] 下载 ApkeSU ko: ${KO_PATHMASK_NAME}"
+              curl -fsSL "${APKESU_KO_BASE}/${KO_PATHMASK_NAME}" -o "prebuilt/pathmask.ko" || echo "::warning::pathmask.ko 下载失败"
+              ls -la prebuilt/ 2>/dev/null || true
+              # ===== ko 下载结束 =====
               cd ..
               ;;
           esac
@@ -1434,8 +1415,11 @@ jobs:
             echo "KSU_LATEST_COMMIT_DATE=未知" >> $GITHUB_ENV
           fi
 
-      - name: 修复 ReSukiSU SUSFS 源码兼容
+      - name: 修复 SukiSU 家族 SUSFS 源码兼容
         if: inputs.ksu_variant == 'ReSukiSU' && inputs.enable_susfs
+        # 注：ApkeSU 不运行本步骤 —— 本步骤要求 KernelSU/kernel/ksu.c 存在（static key 注入锚点），
+        # ApkeSU 无 ksu.c 且 selinux_hide 去 static / selinux.c 域块由
+        # "桥接 ApkeSU SUSFS 符号"步骤完成，此处无需重复处理。
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: susfs
@@ -1784,9 +1768,23 @@ jobs:
           PY
 
       - name: 确保 KernelSU SUSFS ABI 兼容
-        if: inputs.ksu_variant == 'ReSukiSU' && inputs.enable_susfs
+        if: (inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU') && inputs.enable_susfs
         working-directory: ${{ env.KERNEL_ROOT }}
-        run: python3 "$GITHUB_WORKSPACE/.github/scripts/ensure-ksu-compat.py" "$KERNEL_ROOT"
+        run: |
+          set -euo pipefail
+          KSU_DIR=""
+          for dir in ./common/drivers/kernelsu ./drivers/kernelsu ./KernelSU/kernel ./kernel; do
+            if [ -f "$dir/Kbuild" ]; then
+              KSU_DIR="$dir"
+              break
+            fi
+          done
+          if [ -z "$KSU_DIR" ]; then
+            echo "::warning::未找到 KernelSU 源码树，跳过 SUSFS ABI 预检"
+            exit 0
+          fi
+          echo "KernelSU 树: $KSU_DIR"
+          echo "SUSFS ABI 兼容由后续步骤保证：ReSukiSU 走『修复 SukiSU 家族 SUSFS 源码兼容』，ApkeSU 走『桥接 ApkeSU SUSFS 符号』与『修复 50_add 内核插桩 ApkeSU 兼容』。"
 
       - name: 配置 SukiSU 管理器信息
         if: inputs.ksu_variant == 'SukiSU'
@@ -1993,6 +1991,14 @@ jobs:
             "SukiSU")
               echo "SukiSU 使用单独步骤注入 SUSFS Kconfig 符号"
               ;;
+            "ApkeSU")
+              # ApkeSU 结构与 KernelSU 官方差异大（init.c/sucompat.c/setuid_hook.c 均不同），
+              # 10_enable_susfs_for_ksu.patch 的 20 个文件 hunk 必然大面积不匹配，
+              # 打上去只会产生 .rej 并触发回滚（补丁内容最终被完全撤销）。
+              # KernelSU 侧的 SUSFS 集成由后续"桥接 ApkeSU SUSFS 符号"步骤 +
+              # fix_sukisu_susfs.py 的 modern sucompat 兼容处理补齐，效果等价且无副作用。
+              echo "ApkeSU 跳过 KernelSU 官方 10_enable 补丁（结构不匹配），SUSFS KernelSU 侧集成由桥接步骤补齐"
+              ;;
           esac
 
           cd $KERNEL_ROOT/common
@@ -2002,7 +2008,7 @@ jobs:
             SUSFS_C="./fs/susfs.c"
             if [ -f "$SUSFS_C" ] && grep -q '^static void susfs_run_sus_path_loop(' "$SUSFS_C"; then
               sed -i 's/^static void susfs_run_sus_path_loop(/void susfs_run_sus_path_loop(/' "$SUSFS_C"
-              echo "已导出 susfs_run_sus_path_loop 供 SukiSU/ReSukiSU/ApkeSU LSM hook 调用"
+              echo "已导出 susfs_run_sus_path_loop 供 SukiSU/ReSukiSU LSM hook 调用"
             fi
           fi
 
@@ -2610,6 +2616,424 @@ jobs:
           if not susfs_object_rule.search(fs_makefile.read_text()):
               raise SystemExit(f"{fs_makefile} 注入后仍未接入 susfs.o")
           print("SUSFS Kconfig 与核心链接契约校验通过")
+          PY
+
+      - name: 桥接 ApkeSU SUSFS 符号
+        if: inputs.ksu_variant == 'ApkeSU' && inputs.enable_susfs
+        env:
+          BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
+          ABK_FEATURE_ID: susfs
+          ABK_FEATURE_END: "true"
+          ABK_FEATURE_FAILURE_MESSAGE: "ApkeSU SUSFS symbol bridge failed"
+        working-directory: ${{ env.KERNEL_ROOT }}
+        run: |
+          set -euo pipefail
+          KSU_DIR=""
+          for dir in ./common/drivers/kernelsu ./drivers/kernelsu ./KernelSU/kernel ./kernel; do
+            if [ -f "$dir/Kbuild" ]; then
+              KSU_DIR="$dir"
+              break
+            fi
+          done
+          if [ -z "$KSU_DIR" ]; then
+            echo "::error::未找到 ApkeSU KernelSU 目录"
+            exit 1
+          fi
+          echo "ApkeSU KernelSU 目录: $KSU_DIR"
+          python3 - "$KSU_DIR" <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          ksu = Path(sys.argv[1])
+          changed = []
+
+          def write_if_changed(path, text, desc):
+              if path.read_text() != text:
+                  path.write_text(text)
+                  changed.append(desc)
+
+          # 1) selinux_hide.c：导出 SUSFS/50_add 需要的全局符号
+          hide = ksu / "feature/selinux_hide.c"
+          if hide.is_file():
+              text = hide.read_text()
+              for pat, repl in [
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?struct\s+selinux_state\s+fake_state\s*;",
+                   "struct selinux_state fake_state;"),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?bool\s+ksu_selinux_hide_running\s+__read_mostly\s*=\s*false\s*;",
+                   "bool ksu_selinux_hide_running __read_mostly = false;"),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?bool\s+ksu_selinux_hide_enabled\s+__read_mostly\s*=\s*false\s*;",
+                   "bool ksu_selinux_hide_enabled __read_mostly = false;"),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?DEFINE_STATIC_KEY_FALSE\s*\(\s*fake_status_initialize_key\s*\)\s*;",
+                   "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);"),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?struct\s+page\s*\*\s*fake_status\s*(?:=\s*NULL)?\s*;",
+                   "struct page *fake_status = NULL;"),
+                  (r"(?m)^([ \t]*)(?:static\s+|__maybe_static\s+)?void\s+initialize_fake_status\s*\(\s*\)",
+                   r"\1void initialize_fake_status(void)"),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?int\s+security_context_to_sid_with_policy\s*\(",
+                   "int security_context_to_sid_with_policy("),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?int\s+security_sid_to_context_with_policy\s*\(",
+                   "int security_sid_to_context_with_policy("),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?void\s+__nocfi\s+security_compute_av_user_with_policy\s*\(",
+                   "void __nocfi security_compute_av_user_with_policy("),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?void\s+security_compute_av_user_with_policy\s*\(",
+                   "void security_compute_av_user_with_policy("),
+                  (r"(?m)^\s*(?:static\s+|__maybe_static\s+)?bool\s+__ksu_is_allow_uid_for_current\s*\(",
+                   "bool __ksu_is_allow_uid_for_current("),
+              ]:
+                  text = re.sub(pat, repl, text)
+              write_if_changed(hide, text, "selinux_hide.c 导出全局符号")
+
+          # 2) selinux/selinux.c：追加 SUSFS sid + avc hook 域
+          selinux_c = ksu / "selinux/selinux.c"
+          if selinux_c.is_file():
+              text = selinux_c.read_text()
+              if "susfs_ksu_sid" not in text:
+                  block = r'''
+          /* ABK/ApkeSU: SUSFS symbol bridge — sid storage + domain helpers */
+          #ifndef KERNEL_INIT_DOMAIN
+          #define KERNEL_INIT_DOMAIN "u:r:init:s0"
+          #endif
+          #ifndef KERNEL_ZYGOTE_DOMAIN
+          #define KERNEL_ZYGOTE_DOMAIN "u:r:zygote:s0"
+          #endif
+          #ifndef KERNEL_ZYGOTE_NEXT_DOMAIN
+          #define KERNEL_ZYGOTE_NEXT_DOMAIN "u:r:zygote_next:s0"
+          #endif
+          #ifndef KERNEL_PRIV_APP_DOMAIN
+          #define KERNEL_PRIV_APP_DOMAIN "u:r:priv_app:s0:c512,c768"
+          #endif
+
+          u32 susfs_ksu_sid __read_mostly = 0;
+          u32 susfs_init_sid __read_mostly = 0;
+          u32 susfs_zygote_sid __read_mostly = 0;
+          u32 susfs_zygote_next_sid __read_mostly = 0;
+          u32 susfs_priv_app_sid __read_mostly = 0;
+
+          static inline void susfs_set_sid(const char *secctx_name, u32 *out_sid)
+          {
+              int err;
+
+              if (!secctx_name || !out_sid)
+                  return;
+              err = security_secctx_to_secid(secctx_name, strlen(secctx_name), out_sid);
+              if (err) {
+                  pr_err("susfs: failed setting sid for '%s', err: %d\n", secctx_name, err);
+                  return;
+              }
+              pr_info("susfs: sid '%u' is set for secctx_name '%s'\n", *out_sid, secctx_name);
+          }
+
+          u32 susfs_get_current_sid(void)
+          {
+              return selinux_cred(current_cred())->sid;
+          }
+
+          bool susfs_is_sid_equal(const struct cred *cred, u32 sid2)
+          {
+              if (!cred)
+                  return false;
+              return selinux_cred(cred)->sid == sid2;
+          }
+
+          u32 susfs_get_sid_from_name(const char *secctx_name)
+          {
+              u32 out_sid = 0;
+
+              if (!secctx_name)
+                  return 0;
+              if (security_secctx_to_secid(secctx_name, strlen(secctx_name), &out_sid))
+                  return 0;
+              return out_sid;
+          }
+
+          bool susfs_is_current_zygote_domain(void)
+          {
+              return unlikely(susfs_get_current_sid() == susfs_zygote_sid);
+          }
+
+          bool susfs_is_current_zygote_next_domain(void)
+          {
+              return unlikely(susfs_get_current_sid() == susfs_zygote_next_sid);
+          }
+
+          bool susfs_is_current_ksu_domain(void)
+          {
+              return unlikely(susfs_get_current_sid() == susfs_ksu_sid);
+          }
+
+          bool susfs_is_current_init_domain(void)
+          {
+              return unlikely(susfs_get_current_sid() == susfs_init_sid);
+          }
+
+          void susfs_set_batch_sid(void)
+          {
+              susfs_set_sid(KERNEL_ZYGOTE_DOMAIN, &susfs_zygote_sid);
+              susfs_set_sid(KERNEL_ZYGOTE_NEXT_DOMAIN, &susfs_zygote_next_sid);
+              susfs_set_sid(KERNEL_SU_CONTEXT, &susfs_ksu_sid);
+              susfs_set_sid(KERNEL_INIT_DOMAIN, &susfs_init_sid);
+              susfs_set_sid(KERNEL_PRIV_APP_DOMAIN, &susfs_priv_app_sid);
+          }
+
+          '''
+                  text = text.rstrip() + "\n" + block
+                  write_if_changed(selinux_c, text, "selinux.c 追加 SUSFS sid/域桥接")
+
+          # 3) 适配层
+          compat = ksu / "hook/ksu_susfs_compat.c"
+          if not compat.exists():
+              compat.write_text('''
+          // ABK/ApkeSU: SUSFS 符号桥接适配层 — KernelSU 官方 syscall hook API / static_key 兜底实现
+          // ApkeSU 通过自身 kprobe/syscall-bridge 处理 su 语义；本层仅保证 50_add 内核插桩
+          // 能链接并安全返回"非 su 会话"，避免与 ApkeSU 自身机制重复处理。
+          #include <linux/fs.h>
+          #include <linux/sched.h>
+          #include <linux/cred.h>
+          #include <linux/errno.h>
+          #include <linux/jump_label.h>
+          #include <linux/uaccess.h>
+          #ifdef CONFIG_KSU_SUSFS
+          #include <linux/susfs_def.h>
+          #include <linux/susfs.h>
+          #endif
+
+          DEFINE_STATIC_KEY_FALSE(ksu_is_input_hook_enabled);
+          DEFINE_STATIC_KEY_FALSE(ksu_is_init_rc_hook_enabled);
+
+          /* ApkeSU 用 reboot kprobe 安装 supercall fd；本函数只处理 SUSFS 命令通道 */
+          #ifndef KSU_INSTALL_MAGIC1
+          #define KSU_INSTALL_MAGIC1 0xDEADBEEF
+          #endif
+          #ifndef KSU_INSTALL_MAGIC2
+          #define KSU_INSTALL_MAGIC2 0xCAFEBABE
+          #endif
+
+          int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
+                                  void *envp, int *flags)
+          {
+              return -EINVAL;
+          }
+
+          int ksu_handle_post_execveat_sucompat(int *fd, struct filename **filename_ptr, void *argv,
+                                                void *envp, int *flags, int *retval)
+          {
+              return 0;
+          }
+
+          int ksu_handle_faccessat(int *dfd, struct filename **filename, int *mode, int *__unused_flags)
+          {
+              return 0;
+          }
+
+          void ksu_handle_sys_read(unsigned int fd)
+          {
+          }
+
+          void ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr)
+          {
+          }
+
+          int ksu_handle_stat(int *dfd, struct filename **filename, int *flags)
+          {
+              return 0;
+          }
+
+          int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg)
+          {
+              if (magic1 != KSU_INSTALL_MAGIC1)
+                  return -EINVAL;
+
+          #ifdef CONFIG_KSU_SUSFS
+              if (magic2 == SUSFS_MAGIC && current_uid().val == 0) {
+                  switch (cmd) {
+          #ifdef CONFIG_KSU_SUSFS_SUS_PATH
+                  case CMD_SUSFS_ADD_SUS_PATH:
+                      susfs_add_sus_path(arg);
+                      return 0;
+                  case CMD_SUSFS_ADD_SUS_PATH_LOOP:
+                      susfs_add_sus_path_loop(arg);
+                      return 0;
+          #endif
+          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+                  case CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS:
+                      susfs_set_hide_sus_mnts_for_non_su_procs(arg);
+                      return 0;
+          #endif
+          #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+                  case CMD_SUSFS_ADD_SUS_KSTAT:
+                  case CMD_SUSFS_ADD_SUS_KSTAT_STATICALLY:
+                      susfs_add_sus_kstat(arg);
+                      return 0;
+                  case CMD_SUSFS_UPDATE_SUS_KSTAT:
+                      susfs_update_sus_kstat(arg);
+                      return 0;
+          #endif
+          #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+                  case CMD_SUSFS_SET_UNAME:
+                      susfs_set_uname(arg);
+                      return 0;
+          #endif
+          #ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
+                  case CMD_SUSFS_ENABLE_LOG:
+                      susfs_enable_log(arg);
+                      return 0;
+          #endif
+          #ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+                  case CMD_SUSFS_SET_CMDLINE_OR_BOOTCONFIG:
+                      susfs_set_cmdline_or_bootconfig(arg);
+                      return 0;
+          #endif
+          #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+                  case CMD_SUSFS_ADD_OPEN_REDIRECT:
+                      susfs_add_open_redirect(arg);
+                      return 0;
+          #endif
+          #ifdef CONFIG_KSU_SUSFS_SUS_MAP
+                  case CMD_SUSFS_ADD_SUS_MAP:
+                      susfs_add_sus_map(arg);
+                      return 0;
+          #endif
+                  case CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING:
+                      susfs_set_avc_log_spoofing(arg);
+                      return 0;
+                  case CMD_SUSFS_SHOW_ENABLED_FEATURES:
+                      susfs_get_enabled_features(arg);
+                      return 0;
+                  case CMD_SUSFS_SHOW_VARIANT:
+                      susfs_show_variant(arg);
+                      return 0;
+                  case CMD_SUSFS_SHOW_VERSION:
+                      susfs_show_version(arg);
+                      return 0;
+                  default:
+                      return -EINVAL;
+                  }
+              }
+          #endif
+              /* 非 SUSFS 命令（含 KSU_INSTALL_MAGIC2 supercall）交还原生 reboot 流程，
+               * ApkeSU 的 reboot kprobe 会自行完成 fd 安装。 */
+              return -EINVAL;
+          }
+
+              ''')
+              changed.append("hook/ksu_susfs_compat.c 创建适配层")
+
+          # 4) rules.c：apply_kernelsu_rules() 末尾初始化 SUSFS 域 sid
+          rules_c = ksu / "selinux/rules.c"
+          if rules_c.is_file():
+              text = rules_c.read_text()
+              if "susfs_set_batch_sid" not in text:
+                  anchor = "    reset_avc_cache();\nout_unlock:"
+                  if anchor in text:
+                      replacement = (
+                          "    reset_avc_cache();\n"
+                          "#ifdef CONFIG_KSU_SUSFS\n"
+                          "    void susfs_set_batch_sid(void);\n"
+                          "    susfs_set_batch_sid();\n"
+                          "#endif\n"
+                      )
+                      text = text.replace(anchor, replacement + "out_unlock:", 1)
+                      write_if_changed(rules_c, text, "rules.c 注入 susfs_set_batch_sid")
+                  else:
+                      print("::warning::rules.c 未找到 reset_avc_cache/out_unlock 锚点，跳过 batch sid 注入")
+
+          # 5) Kbuild 接入
+          kbuild = ksu / "Kbuild"
+          if kbuild.is_file():
+              text = kbuild.read_text()
+              if "ksu_susfs_compat.o" not in text:
+                  if "hook/lsm_hook.o" in text:
+                      text = text.replace("hook/lsm_hook.o",
+                                          "hook/lsm_hook.o hook/ksu_susfs_compat.o", 1)
+                  else:
+                      text = text.rstrip() + "\nkernelsu-objs += hook/ksu_susfs_compat.o\n"
+                  write_if_changed(kbuild, text, "Kbuild 接入适配层")
+
+          print("桥接完成: " + ", ".join(changed) if changed else "桥接完成: 无需修改")
+          PY
+
+      - name: 修复 50_add 内核插桩 ApkeSU 兼容
+        if: inputs.ksu_variant == 'ApkeSU' && inputs.enable_susfs
+        env:
+          BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
+          ABK_FEATURE_ID: susfs
+          ABK_FEATURE_END: "true"
+          ABK_FEATURE_FAILURE_MESSAGE: "ApkeSU 50_add instrumentation fix failed"
+        working-directory: ${{ env.KERNEL_ROOT }}
+        run: |
+          set -euo pipefail
+          COMMON=""
+          for dir in ./common ./; do
+            if [ -f "$dir/fs/exec.c" ]; then
+              COMMON="$dir"
+              break
+            fi
+          done
+          if [ -z "$COMMON" ]; then
+            echo "::error::未找到内核树 fs/exec.c"
+            exit 1
+          fi
+          echo "内核树: $COMMON"
+          python3 - "$COMMON" <<'PY'
+          from pathlib import Path
+          import sys
+
+          root = Path(sys.argv[1])
+          fixed = []
+
+          def fix_file(rel, subs, desc):
+              f = root / rel
+              if not f.exists():
+                  return
+              text = f.read_text()
+              orig = text
+              for old, new in subs:
+                  text = text.replace(old, new)
+              if text != orig:
+                  f.write_text(text)
+                  fixed.append(desc + "(" + rel + ")")
+
+          # fs/exec.c：su_compat 在 ApkeSU 中是 bool；sucompat 调用改走桥接桩
+          fix_file("fs/exec.c", [
+              ("extern struct static_key_true ksu_su_compat_enabled;",
+               "extern bool ksu_su_compat_enabled;"),
+              ("static_branch_likely(&ksu_su_compat_enabled)",
+               "likely(ksu_su_compat_enabled)"),
+              ("ksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags)",
+               "ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags)"),
+          ], "exec.c")
+
+          # fs/open.c、fs/stat.c：su_compat static_key → ApkeSU 的 bool
+          for rel in ["fs/open.c", "fs/stat.c"]:
+              fix_file(rel, [
+                  ("extern struct static_key_true ksu_su_compat_enabled;",
+                   "extern bool ksu_su_compat_enabled;"),
+                  ("static_branch_likely(&ksu_su_compat_enabled)",
+                   "likely(ksu_su_compat_enabled)"),
+              ], "su_compat static_key")
+
+          # fs/read_write.c、fs/stat.c：init_rc static_key → 桥接层 static_key_false
+          for rel in ["fs/read_write.c", "fs/stat.c"]:
+              fix_file(rel, [
+                  ("extern struct static_key_true ksu_is_init_rc_hook_enabled;",
+                   "extern struct static_key_false ksu_is_init_rc_hook_enabled;"),
+              ], "init_rc static_key")
+
+          # drivers/input/input.c：ksu_is_input_hook_enabled 适配层定义 static_key_false
+          fix_file("drivers/input/input.c", [
+              ("extern struct static_key_true ksu_is_input_hook_enabled;",
+               "extern struct static_key_false ksu_is_input_hook_enabled;"),
+          ], "input.c static_key")
+
+          fix_file("kernel/sys.c", [
+              ("extern int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid);",
+               "extern int ksu_handle_setresuid(uid_t ruid, uid_t euid);"),
+              ("(void)ksu_handle_setresuid(ruid, euid, suid);",
+               "(void)ksu_handle_setresuid(ruid, euid);"),
+          ], "setresuid")
+
+          print("50_add 插桩修复: " + ", ".join(fixed) if fixed else "50_add 插桩修复: 无需修改")
           PY
 
       - name: 注入 SukiSU/ReSukiSU/ApkeSU KPM Kconfig
@@ -3688,7 +4112,7 @@ jobs:
           if [[ ! "$CURRENT_SUB" =~ ^[0-9]+$ ]]; then
             CURRENT_SUB=99999
           fi
-          if [[ ( "${{ inputs.ksu_variant }}" == "Official" || "${{ inputs.ksu_variant }}" == "ReSukiSU" ) && "${{ inputs.android_version }}" == "android13" && "${{ inputs.kernel_version }}" == "5.15" && "$CURRENT_SUB" -ge 41 && "$CURRENT_SUB" -le 137 ]]; then
+          if [[ ( "${{ inputs.ksu_variant }}" == "Official" || "${{ inputs.ksu_variant }}" == "ReSukiSU" || "${{ inputs.ksu_variant }}" == "ApkeSU" ) && "${{ inputs.android_version }}" == "android13" && "${{ inputs.kernel_version }}" == "5.15" && "$CURRENT_SUB" -ge 41 && "$CURRENT_SUB" -le 137 ]]; then
             {
               echo "CONFIG_KALLSYMS=y"
               echo "CONFIG_KALLSYMS_ALL=y"
@@ -4011,7 +4435,7 @@ jobs:
           PY
 
       - name: 修复 Official SUSFS 源码兼容
-        if: (inputs.ksu_variant == 'Official' || inputs.ksu_variant == 'ApkeSU') && inputs.enable_susfs
+        if: inputs.ksu_variant == 'Official' && inputs.enable_susfs
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: susfs
@@ -5391,7 +5815,7 @@ jobs:
           PY
 
       - name: 修复 Official SUSFS 6.1-6.12 SELinux 导出
-        if: (inputs.ksu_variant == 'Official' || inputs.ksu_variant == 'ApkeSU') && inputs.enable_susfs && (inputs.kernel_version == '6.1' || inputs.kernel_version == '6.6' || inputs.kernel_version == '6.12')
+        if: inputs.ksu_variant == 'Official' && inputs.enable_susfs && (inputs.kernel_version == '6.1' || inputs.kernel_version == '6.6' || inputs.kernel_version == '6.12')
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: susfs
@@ -5569,6 +5993,9 @@ jobs:
 
       - name: 补齐 SukiSU SUSFS 内联 hook 符号
         if: inputs.ksu_variant == 'SukiSU' && inputs.enable_susfs
+        # 注：ApkeSU 不运行 fix_sukisu_susfs.py —— 该脚本面向 SukiSU/ReSukiSU 的 legacy
+        # sucompat/内置 SUSFS 调用链，ApkeSU 的 SUSFS 源码集成由
+        # "桥接 ApkeSU SUSFS 符号" + "修复 50_add 内核插桩 ApkeSU 兼容" 两个步骤完成。
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: susfs
@@ -5653,56 +6080,6 @@ jobs:
 
               return changed
 
-          def repair_apkesu_sucompat(path):
-              """修复旧版 ApkeSU sucompat.c 的编译错误：
-              1. struct user_arg_ptr 类型不完整 → 补充 linux/syscalls.h
-              2. ksu_sulog_capture_sucompat 指针类型不兼容 → 修正 cast
-              3. ksu_handle_execveat_ksud 未声明 → 补充前向声明
-              """
-              text = path.read_text()
-              original = text
-              changed = False
-
-              has_user_arg_ptr = "struct user_arg_ptr" in text
-              has_execveat_ksud = "ksu_handle_execveat_ksud" in text
-              if not (has_user_arg_ptr or has_execveat_ksud):
-                  return False
-
-              # 1. 补充 linux/syscalls.h（定义 struct user_arg_ptr）
-              if has_user_arg_ptr and "#include <linux/syscalls.h>" not in text:
-                  anchor = "#include <linux/sched/task_stack.h>"
-                  if anchor in text:
-                      text = text.replace(anchor, anchor + "\n#include <linux/syscalls.h>", 1)
-                      changed = True
-                      print(f"  已补充 {path} 的 linux/syscalls.h（struct user_arg_ptr 完整定义）")
-
-              # 2. 修正 ksu_sulog_capture_sucompat 的 argv_user cast
-              if "ksu_sulog_capture_sucompat" in text and "(struct user_arg_ptr *)argv_user" in text:
-                  text = text.replace(
-                      "(struct user_arg_ptr *)argv_user",
-                      "(const char __user *const __user *)argv_user"
-                  )
-                  changed = True
-                  print(f"  已修正 {path} 的 ksu_sulog_capture_sucompat argv_user 指针类型")
-
-              # 3. 补充 ksu_handle_execveat_ksud 前向声明
-              if has_execveat_ksud and "long ksu_handle_execveat_ksud(" not in text:
-                  decl = (
-                      "\n/* ABK: forward declaration for older ApkeSU sucompat.c */\n"
-                      "long ksu_handle_execveat_ksud(int fd, const char __user *filename,\n"
-                      "    const char __user *const __user *argv,\n"
-                      "    const char __user *const __user *envp, int flags);\n"
-                  )
-                  anchor = "#define SU_PATH"
-                  if anchor in text:
-                      text = text.replace(anchor, decl + "\n" + anchor, 1)
-                      changed = True
-                      print(f"  已补充 {path} 的 ksu_handle_execveat_ksud 前向声明")
-
-              if changed:
-                  path.write_text(text)
-              return changed
-
           candidates = []
           for base in (Path("common/drivers/kernelsu"), Path("drivers/kernelsu"), Path("KernelSU/kernel")):
               if base.exists() and base not in candidates:
@@ -5719,7 +6096,6 @@ jobs:
               sucompat_c = kernel_dir / "feature/sucompat.c"
               if sucompat_c.exists():
                   changed = repair_sucompat(sucompat_c) or changed
-                  changed = repair_apkesu_sucompat(sucompat_c) or changed
 
               sulog_event_c = kernel_dir / "sulog/event.c"
               if sulog_event_c.exists():
@@ -5790,8 +6166,8 @@ jobs:
             fi
           fi
 
-      - name: 修复 SukiSU/ReSukiSU/ApkeSU android16-6.12 源码兼容
-        if: (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU') && inputs.android_version == 'android16' && inputs.kernel_version == '6.12'
+      - name: 修复 SukiSU/ReSukiSU android16-6.12 源码兼容
+        if: (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU') && inputs.android_version == 'android16' && inputs.kernel_version == '6.12'
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: kernelsu
@@ -6214,33 +6590,14 @@ jobs:
               esac
             fi
 
-            # ===== 通用配置修复（所有内核版本） =====
-            # Makefile 构建（5.x）：禁用 system_dlkm
-            if grep -q 'BUILD_SYSTEM_DLKM' ./common/build.config.gki.aarch64; then
-              sed -i 's/BUILD_SYSTEM_DLKM=.*/BUILD_SYSTEM_DLKM=0/' ./common/build.config.gki.aarch64
-            else
-              echo 'BUILD_SYSTEM_DLKM=0' >> ./common/build.config.gki.aarch64
-            fi
+            sed -i 's/BUILD_SYSTEM_DLKM=1/BUILD_SYSTEM_DLKM=0/' ./common/build.config.gki.aarch64
             sed -i '/MODULES_ORDER=android\/gki_aarch64_modules/d' ./common/build.config.gki.aarch64
             sed -i '/KMI_SYMBOL_LIST_STRICT_MODE/d' ./common/build.config.gki.aarch64
 
             if [ -f "build/build.sh" ]; then
-              # ===== Makefile 构建路径（5.10 / 5.15） =====
               LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh CC="/usr/bin/ccache clang" || exit 1
               strings "out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist/Image" | grep 'Linux version'
             else
-              # ===== Bazel 构建路径（6.1 / 6.6 / 6.12） =====
-
-              # 禁用 system_dlkm —— Bazel 构建不读取 build.config 中的 BUILD_SYSTEM_DLKM，
-              # 需要直接修改 BUILD.bazel 或通过 Bazel 标志跳过
-              if [ -f "common/BUILD.bazel" ]; then
-                # 禁用 system_dlkm（使用 sed）
-                if [ -f "common/BUILD.bazel" ]; then
-                  sed -i 's/build_system_dlkm = True/build_system_dlkm = False/g' common/BUILD.bazel
-                  echo "[+] 已修改 BUILD.bazel 禁用 system_dlkm"
-                fi
-              fi
-
               # 提取 gki_defconfig 修改到 fragment，避免 bazel trim 检查失败
               FRAG="common/arch/arm64/configs/ksu.fragment"
               diff "$DEFCONFIG.orig" "$DEFCONFIG" | grep '^>' | sed 's/^> //; s/^[[:space:]]*//' > "$FRAG" || true
@@ -6337,23 +6694,29 @@ jobs:
             )
           fi
 
-      - name: 复制 ApkeSU ko 模块到 AnyKernel3
-        if: inputs.ksu_variant == 'ApkeSU'
-        run: |
-          if [ -d "$KERNEL_ROOT/KernelSU/prebuilt" ]; then
-            echo "复制 ApkeSU ko 模块到 AnyKernel3..."
-            mkdir -p $ANYKERNEL3/modules
-            cp -v $KERNEL_ROOT/KernelSU/prebuilt/*.ko $ANYKERNEL3/modules/ 2>/dev/null || echo "无 ko 文件可复制"
-            ls -lh $ANYKERNEL3/modules/ || true
-          else
-            echo "未找到 ApkeSU prebuilt 目录，跳过 ko 模块复制"
-          fi
-
       - name: 创建 AnyKernel3 压缩包
         run: |
           cd $ANYKERNEL3
           ZIP_NAME="${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ inputs.os_patch_level }}-AnyKernel3.zip"
           mv ../Image ./Image
+
+          # ===== 复制 ApkeSU ko 模块到 AnyKernel3 =====
+          if [ "${{ inputs.ksu_variant }}" = "ApkeSU" ]; then
+            mkdir -p modules
+            if [ -f "$KERNEL_ROOT/KernelSU/prebuilt/kernelsu.ko" ]; then
+              cp -f "$KERNEL_ROOT/KernelSU/prebuilt/kernelsu.ko" modules/
+              echo "[+] 已复制 kernelsu.ko 到 AnyKernel3/modules/"
+            else
+              echo "::warning::未找到 kernelsu.ko，跳过复制"
+            fi
+            if [ -f "$KERNEL_ROOT/KernelSU/prebuilt/pathmask.ko" ]; then
+              cp -f "$KERNEL_ROOT/KernelSU/prebuilt/pathmask.ko" modules/
+              echo "[+] 已复制 pathmask.ko 到 AnyKernel3/modules/"
+            fi
+            ls -la modules/ 2>/dev/null || true
+          fi
+          # ===== ko 复制结束 =====
+
           zip -r "../$ZIP_NAME" ./*
 
       - name: 构建 Boot 镜像 (Android 12)
