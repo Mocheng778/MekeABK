@@ -2314,6 +2314,95 @@ jobs:
           PY
             }
 
+            ensure_susfs_stat_compat() {
+              local file="./fs/stat.c"
+              [ -f "$file" ] || return 0
+
+              python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path("./fs/stat.c")
+          text = path.read_text()
+          if "mnt_userns" in text:
+              text = text.replace(
+                  "inode->i_op->getattr(mnt_userns, path, stat,\n\t\t\t\trequest_mask, query_flags);",
+                  "inode->i_op->getattr(idmap, path, stat,\n\t\t\t\trequest_mask, query_flags | AT_GETATTR_NOSEC);",
+              )
+              text = text.replace(
+                  "generic_fillattr(mnt_userns, inode, stat);",
+                  "generic_fillattr(idmap, request_mask, inode, stat);",
+              )
+              if "mnt_userns" in text:
+                  text = text.replace("mnt_userns", "idmap")
+              path.write_text(text)
+              print("已修复 fs/stat.c 的 mnt_userns -> idmap 兼容")
+          if "susfs_get_non_sus_mnt_id_unique_from_mnt(" in text:
+              declaration = "extern u64 susfs_get_non_sus_mnt_id_unique_from_mnt(struct mount *orig_mnt);"
+              call = text.find("susfs_get_non_sus_mnt_id_unique_from_mnt(")
+              declared = text.find(declaration)
+              if declared < 0 or declared > call:
+                  anchor = "extern void susfs_sus_kstat_spoof_generic_fillattr(struct inode *inode, struct kstat *stat, u32 result_mask);"
+                  if anchor in text:
+                      text = text.replace(anchor, anchor + "\n" + declaration, 1)
+                  else:
+                      include_anchor = "#include \"mount.h\"\n"
+                      if include_anchor not in text:
+                          raise SystemExit(f"无法定位 {path} 的 SUSFS stat 声明插入点")
+                      block = "#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT\n" + declaration + "\n#endif\n"
+                      text = text.replace(include_anchor, include_anchor + "\n" + block, 1)
+                  path.write_text(text)
+                  print("已补齐 fs/stat.c 的 SUSFS mount id helper 原型")
+          PY
+            }
+
+            ensure_susfs_stat_compat
+
+            ensure_susfs_super_compat() {
+              local file="./fs/super.c"
+              [ -f "$file" ] || return 0
+
+              python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("./fs/super.c")
+          text = path.read_text()
+          needed = (
+              "susfs_is_current_ksu_domain",
+              "susfs_is_sdcard_android_data_not_decrypted",
+              "DEFAULT_KSU_MNT_MINOR_DEV",
+          )
+          if not any(name in text for name in needed):
+              raise SystemExit(0)
+
+          if "#include <linux/susfs_def.h>" not in text:
+              anchor = "#include <linux/fs_context.h>\n"
+              if anchor not in text:
+                  raise SystemExit(f"无法定位 {path} 的 susfs_def.h 插入点")
+              text = text.replace(anchor, anchor + "#ifdef CONFIG_KSU_SUSFS\n#include <linux/susfs_def.h>\n#endif\n", 1)
+
+          if "extern bool susfs_is_current_ksu_domain(void);" not in text:
+              anchor = '#include "internal.h"\n'
+              if anchor not in text:
+                  raise SystemExit(f"无法定位 {path} 的 SUSFS extern 插入点")
+              block = (
+                  "\n#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n"
+                  "extern bool susfs_is_current_ksu_domain(void);\n"
+                  "extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;\n"
+                  "#ifndef DEFAULT_KSU_MNT_MINOR_DEV\n"
+                  "#define DEFAULT_KSU_MNT_MINOR_DEV (1 << 12)\n"
+                  "#endif\n"
+                  "#endif\n"
+              )
+              text = text.replace(anchor, anchor + block, 1)
+
+          path.write_text(text)
+          print("已补齐 fs/super.c 的 SUSFS include/extern 声明")
+          PY
+            }
+
+            ensure_susfs_super_compat
+
             # Android 12 - 5.10 修复
             if [[ "$ABK_ANDROID_VERSION" == "android12" && "$ABK_KERNEL_VERSION" == "5.10" ]]; then
               if sub_in_range "$CURRENT_SUB" 43 117; then
@@ -4681,6 +4770,9 @@ jobs:
                                                void *envp_user, int *__never_use_flags);
               int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
                                       void *envp, int *flags);
+              int ksu_handle_post_execveat_sucompat(int *fd, struct filename **filename_ptr,
+                                                     void *argv_user, void *envp_user,
+                                                     int *flags, int *retval);
               long ksu_handle_execve_sucompat(const char __user **filename_user, int orig_nr, const struct pt_regs *regs);
 
               #endif
@@ -4708,6 +4800,7 @@ jobs:
               text = ensure_include(text, '#include "objsec.h"', '#include "selinux/selinux.h"\n')
               text = ensure_include(text, '#include "feature/adb_root.h"', '#include "feature/sucompat.h"\n')
               text = ensure_include(text, '#include "uapi/sulog.h"', '#include "sulog/event.h"\n')
+              text = ensure_include(text, '#include "supercall/supercall.h"', '#include "feature/adb_root.h"\n')
               text = text.replace('#include "ksu.h"\n', "")
               text = text.replace('#include "util.h"\n', "")
 
@@ -4886,6 +4979,17 @@ jobs:
                   ksu_sulog_emit_pending(pending_sucompat, ret, GFP_KERNEL);
                   return 0;
               }
+
+              #ifdef CONFIG_KSU_SUSFS
+              int ksu_handle_post_execveat_sucompat(int *fd, struct filename **filename_ptr,
+                                                     void *argv_user, void *envp_user,
+                                                     int *flags, int *retval)
+              {
+                  if (*retval >= 0)
+                      (void)ksu_install_su_fd();
+                  return 0;
+              }
+              #endif
 
               int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
                                       void *envp, int *flags)

@@ -146,6 +146,20 @@ class KernelWorkflowRegressionTests(unittest.TestCase):
         self.assertIn("int ksu_handle_post_execveat_sucompat(", block)
         self.assertIn("(void)ksu_install_su_fd();", block)
 
+    def test_official_post_exec_wrapper_is_preserved_after_rewrite(self):
+        block = self._step_run_block("修复 Official SUSFS 源码兼容")
+        self.assertIn('int ksu_handle_post_execveat_sucompat(', block)
+        self.assertIn('(void)ksu_install_su_fd();', block)
+        self.assertIn('#include "supercall/supercall.h"', block)
+
+    def test_susfs_common_file_fallbacks_cover_upstream_api_renames(self):
+        block = self._step_run_block("应用 SUSFS 补丁")
+        self.assertIn('mnt_userns', block)
+        self.assertIn('text.replace("mnt_userns", "idmap")', block)
+        self.assertIn('ensure_susfs_super_compat', block)
+        self.assertIn('DEFAULT_KSU_MNT_MINOR_DEV', block)
+        self.assertIn('susfs_get_non_sus_mnt_id_unique_from_mnt', block)
+
     def test_android16_uses_native_ntsync_source(self):
         block = self._step_run_block("应用 NTsync 补丁")
         self.assertIn('if [[ "$ABK_ANDROID_VERSION" != "android16"', block)
