@@ -1393,7 +1393,9 @@ jobs:
                 RELEASE_VERSION=$(echo "$APKESU_RELEASE_TAG" | grep -oE '[0-9]+' | tail -1)
                 if [ -n "$RELEASE_VERSION" ] && [ "$RELEASE_VERSION" -gt 30000 ] 2>/dev/null; then
                   echo "[+] ApkeSU Release 版本: $RELEASE_VERSION（git 计算: $KSU_VERSION），使用 Release 版本匹配 manager"
+                  KSU_VERSION="$RELEASE_VERSION"
                   KSU_VERSION_OVERRIDE="$RELEASE_VERSION"
+                  echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
                 else
                   echo "[!] 无法解析 ApkeSU Release 版本 ($APKESU_RELEASE_TAG)，使用 git 计算版本: $KSU_VERSION"
                   KSU_VERSION_OVERRIDE="$KSU_VERSION"
