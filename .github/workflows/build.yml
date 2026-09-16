@@ -6762,6 +6762,43 @@ jobs:
               echo "[+] 已复制 pathmask.ko 到 AnyKernel3/modules/"
             fi
             ls -la modules/ 2>/dev/null || true
+
+            # ===== 嵌入 SUSFS 用户态工具（ksu_susfs），无需单独刷 SUSFS 模块 =====
+            echo "[+] 下载 SUSFS 用户态工具 ksu_susfs..."
+            SUSFS_BUILD_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/sidex15/susfs4ksu-module/actions/workflows/build.yml/runs?status=success" | \
+              jq -r '.workflow_runs[0].id')
+            if [ -n "$SUSFS_BUILD_ID" ] && [ "$SUSFS_BUILD_ID" != "null" ]; then
+              SUSFS_ARTIFACTS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                "https://api.github.com/repos/sidex15/susfs4ksu-module/actions/runs/$SUSFS_BUILD_ID/artifacts")
+              SUSFS_URL=$(echo "$SUSFS_ARTIFACTS" | jq -r '.artifacts[0].archive_download_url')
+              mkdir -p /tmp/susfs-dl
+              curl -sL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -o /tmp/susfs-dl/susfs.zip "$SUSFS_URL"
+              cd /tmp/susfs-dl && unzip -o susfs.zip -d extracted/
+              SUSFS_BIN=$(find extracted/ -name 'ksu_susfs' -type f | head -1)
+              if [ -n "$SUSFS_BIN" ]; then
+                mkdir -p "$ANYKERNEL3/susfs-files/bin"
+                cp "$SUSFS_BIN" "$ANYKERNEL3/susfs-files/bin/ksu_susfs"
+                chmod 755 "$ANYKERNEL3/susfs-files/bin/ksu_susfs"
+                echo "[+] ksu_susfs 已嵌入 AnyKernel3"
+                # 在 customize.sh 中追加安装逻辑
+                printf '\n# ===== 安装 SUSFS 用户态工具 =====\n' >> "$ANYKERNEL3/customize.sh"
+                printf 'if [ -f "$TMPDIR/susfs-files/bin/ksu_susfs" ]; then\n' >> "$ANYKERNEL3/customize.sh"
+                printf '  ui_print "- 安装 SUSFS 用户态工具..."\n' >> "$ANYKERNEL3/customize.sh"
+                printf '  mkdir -p /data/adb/ksu/bin\n' >> "$ANYKERNEL3/customize.sh"
+                printf '  cp "$TMPDIR/susfs-files/bin/ksu_susfs" /data/adb/ksu/bin/ksu_susfs\n' >> "$ANYKERNEL3/customize.sh"
+                printf '  chmod 755 /data/adb/ksu/bin/ksu_susfs\n' >> "$ANYKERNEL3/customize.sh"
+                printf '  ui_print "- ksu_susfs 已安装到 /data/adb/ksu/bin/"\n' >> "$ANYKERNEL3/customize.sh"
+                printf 'fi\n' >> "$ANYKERNEL3/customize.sh"
+              else
+                echo "::warning::未在 SUSFS 模块中找到 ksu_susfs 二进制"
+              fi
+              cd $ANYKERNEL3
+              rm -rf /tmp/susfs-dl
+            else
+              echo "::warning::未找到 SUSFS 模块构建，跳过 ksu_susfs 嵌入"
+            fi
+            # ===== SUSFS 嵌入结束 =====
           fi
           # ===== ko 复制结束 =====
 
