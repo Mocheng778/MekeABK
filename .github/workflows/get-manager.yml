@@ -126,13 +126,14 @@ jobs:
             KSU_VERSION=$((30000 + KSU_GIT_VERSION))
           elif [ "${{ inputs.kernelsu_variant }}" == "ApkeSU" ]; then
             KSU_VERSION=$((30000 + KSU_GIT_VERSION))
-            # ApkeSU manager 从 Release 下载，版本号以 Release tag 为准（与内核 KSU_VERSION_OVERRIDE 一致）
+            # ApkeSU manager 从 Release 下载，版本号在 APK 文件名中（如 ApkeSU_3.2.8_32800-release.apk）
+            # 从 Release assets 中提取 versionCode，确保与内核驱动版本一致
             APKESU_TAG=$(curl -fsSL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              "https://api.github.com/repos/fixz232/ApkeSU/releases/latest" | jq -r ".tag_name")
+              "https://api.github.com/repos/fixz232/ApkeSU/releases/latest" | jq -r ".assets[].name" | grep -E '\.apk$' | head -1)
             if [ -n "$APKESU_TAG" ] && [ "$APKESU_TAG" != "null" ]; then
-              APKESU_VER=$(echo "$APKESU_TAG" | grep -oE '[0-9]+' | tail -1)
+              APKESU_VER=$(echo "$APKESU_TAG" | grep -oE '_[0-9]+-' | tr -d '_-')
               if [ -n "$APKESU_VER" ] && [ "$APKESU_VER" -gt 30000 ] 2>/dev/null; then
-                echo "[+] ApkeSU Release 版本: $APKESU_VER（git 计算: $KSU_VERSION），使用 Release 版本"
+                echo "[+] ApkeSU APK 版本: $APKESU_VER（git 计算: $KSU_VERSION），使用 APK 版本"
                 KSU_VERSION="$APKESU_VER"
               fi
             fi
