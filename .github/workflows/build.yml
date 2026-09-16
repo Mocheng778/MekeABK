@@ -268,10 +268,10 @@ jobs:
           combo="${android_version}-${kernel_version}"
 
           case "$combo" in
-            android12-5.10|android13-5.15|android14-6.1|android15-6.6|android16-6.12) ;;
+            android12-5.10|android13-5.10|android13-5.15|android14-5.15|android14-6.1|android15-6.6|android16-6.12) ;;
             *)
               echo "::error::不支持的 Android/内核组合: ${android_version}/${kernel_version}"
-              echo "::error::当前工作流支持: android12/5.10, android13/5.15, android14/6.1, android15/6.6, android16/6.12"
+              echo "::error::当前工作流支持: android12/5.10, android13/5.10, android13/5.15, android14/5.15, android14/6.1, android15/6.6, android16/6.12"
               exit 1
               ;;
           esac
