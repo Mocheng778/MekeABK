@@ -289,14 +289,17 @@ jobs:
           mkdir -p susfs-module
           unzip "$NAME" -d susfs-temp
 
-          # 检查解压后的内容：如果是散装文件则打包成 zip
+          # 检查解压后的内容
           cd susfs-temp
           if ls *.zip 1>/dev/null 2>&1; then
-            # 里面已经是 zip 文件，直接移动
-            mv *.zip ../susfs-module/
+            # 里面已经是 zip 文件，解压出来直接放到 susfs-module/
+            # （避免外层 GitHub artifact zip 嵌套导致刷写失败）
+            for z in *.zip; do
+              unzip -o "$z" -d ../susfs-module/
+            done
           else
-            # 是散装文件，打包成 zip
-            zip -r "../susfs-module/ksu_module_susfs.zip" .
+            # 是散装文件，直接复制到 susfs-module/
+            cp -r ../susfs-temp/* ../susfs-module/
           fi
           cd ..
           rm -rf susfs-temp "$NAME"
