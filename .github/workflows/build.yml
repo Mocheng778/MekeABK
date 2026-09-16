@@ -2324,7 +2324,11 @@ jobs:
 
           path = Path("./fs/stat.c")
           text = path.read_text()
-          if "mnt_userns" in text:
+          # 仅当 stat.c 原生代码已是新式 idmap API（6.5+）时，才把 SUSFS 补丁带入的
+          # mnt_userns 旧式调用改写为 4 参 generic_fillattr；5.10/5.15/6.1 必须保持 3 参旧式，
+          # 否则会引用不存在的 AT_GETATTR_NOSEC 并触发 "expected 3, have 4"。
+          native_new_api = "struct mnt_idmap" in text or "mnt_idmap(path->mnt)" in text
+          if "mnt_userns" in text and native_new_api:
               text = text.replace(
                   "inode->i_op->getattr(mnt_userns, path, stat,\n\t\t\t\trequest_mask, query_flags);",
                   "inode->i_op->getattr(idmap, path, stat,\n\t\t\t\trequest_mask, query_flags | AT_GETATTR_NOSEC);",
@@ -2357,6 +2361,41 @@ jobs:
             }
 
             ensure_susfs_stat_compat
+
+            ensure_susfs_namespace_tail() {
+              local file="./fs/namespace.c"
+              [ -f "$file" ] || return 0
+
+              python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path("./fs/namespace.c")
+          text = path.read_text()
+          opens = len(re.findall(r"(?m)^[ \t]*#[ \t]*(if|ifdef|ifndef)\b", text))
+          closes = len(re.findall(r"(?m)^[ \t]*#[ \t]*endif\b", text))
+          # SUSFS 上游偶发坏 hunk 头（声明的新行数少于实际行数，如 +4454,34 实为 43）时，
+          # patch 只截取尾部一部分，留下未闭合的 #ifdef CONFIG_KSU_SUSFS，
+          # 编译报 "unterminated conditional directive"。按已知截断签名补齐尾部。
+          if closes >= opens or not text.rstrip().endswith("if (!mnt->mnt.mnt_root || IS_ERR(mnt->mnt.mnt_root)) {"):
+              raise SystemExit(0)
+          completion = (
+              "\t\tmntput(&mnt->mnt);\n"
+              "\t\tunlock_mount_hash();\n"
+              "\t\treturn vfsmnt;\n"
+              "\t}\n"
+              "\tdget(mnt->mnt.mnt_root);\n"
+              "\tunlock_mount_hash();\n"
+              "\treturn &mnt->mnt;\n"
+              "}\n"
+              "#endif // #ifdef CONFIG_KSU_SUSFS\n"
+          )
+          path.write_text(text.rstrip("\n") + "\n" + completion)
+          print("已补齐 fs/namespace.c 被截断的 SUSFS 尾部")
+          PY
+            }
+
+            ensure_susfs_namespace_tail
 
             ensure_susfs_super_compat() {
               local file="./fs/super.c"

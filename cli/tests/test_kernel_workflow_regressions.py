@@ -160,6 +160,23 @@ class KernelWorkflowRegressionTests(unittest.TestCase):
         self.assertIn('DEFAULT_KSU_MNT_MINOR_DEV', block)
         self.assertIn('susfs_get_non_sus_mnt_id_unique_from_mnt', block)
 
+    def test_stat_api_rewrite_is_gated_to_native_idmap_kernels(self):
+        block = self._step_run_block("应用 SUSFS 补丁")
+        self.assertIn("native_new_api = \"struct mnt_idmap\" in text", block)
+        self.assertIn(
+            'if "mnt_userns" in text and native_new_api:',
+            block,
+        )
+
+    def test_namespace_tail_repair_closes_truncated_susfs_hunk(self):
+        block = self._step_run_block("应用 SUSFS 补丁")
+        self.assertIn("ensure_susfs_namespace_tail", block)
+        self.assertIn(
+            'if (!mnt->mnt.mnt_root || IS_ERR(mnt->mnt.mnt_root)) {',
+            block,
+        )
+        self.assertIn("#endif // #ifdef CONFIG_KSU_SUSFS", block)
+
     def test_android16_uses_native_ntsync_source(self):
         block = self._step_run_block("应用 NTsync 补丁")
         self.assertIn('if [[ "$ABK_ANDROID_VERSION" != "android16"', block)
