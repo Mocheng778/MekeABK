@@ -1405,19 +1405,27 @@ jobs:
               fi
               echo "KSU_VERSION_OVERRIDE=$KSU_VERSION_OVERRIDE" >> $GITHUB_ENV
 
-              # ===== 下载 ApkeSU 预编译 ko 模块 =====
-              mkdir -p prebuilt
+              # ===== 处理 ApkeSU ko 模块 =====
               ANDROID_VERSION="${{ inputs.android_version }}"
               KERNEL_VERSION="${{ inputs.kernel_version }}"
-              APKESU_KO_BASE="https://raw.githubusercontent.com/fixz232/ApkeSU/ApkeSU/userspace/ksud/bin/aarch64"
-              KO_KERNEL_NAME="${ANDROID_VERSION}-${KERNEL_VERSION}_kernelsu.ko"
-              KO_PATHMASK_NAME="${ANDROID_VERSION}-${KERNEL_VERSION}_pathmask.ko"
-              echo "[+] 下载 ApkeSU ko: ${KO_KERNEL_NAME}"
-              curl -fsSL "${APKESU_KO_BASE}/${KO_KERNEL_NAME}" -o "prebuilt/kernelsu.ko" || echo "::warning::kernelsu.ko 下载失败，将尝试从源码编译"
-              echo "[+] 下载 ApkeSU ko: ${KO_PATHMASK_NAME}"
-              curl -fsSL "${APKESU_KO_BASE}/${KO_PATHMASK_NAME}" -o "prebuilt/pathmask.ko" || echo "::warning::pathmask.ko 下载失败"
-              ls -la prebuilt/ 2>/dev/null || true
-              # ===== ko 下载结束 =====
+              if [ "${{ inputs.enable_susfs }}" = "true" ]; then
+                # 启用 SUSFS 时不使用预编译 ko（ko 里没有 SUSFS 支持），
+                # 改为从源码编译 KSU，让 SUSFS 50_add 补丁生效
+                echo "[+] 启用 SUSFS：跳过预编译 ko，将从源码编译 KSU"
+                rm -rf prebuilt
+              else
+                # 未启用 SUSFS 时使用预编译 ko（编译更快）
+                mkdir -p prebuilt
+                APKESU_KO_BASE="https://raw.githubusercontent.com/fixz232/ApkeSU/ApkeSU/userspace/ksud/bin/aarch64"
+                KO_KERNEL_NAME="${ANDROID_VERSION}-${KERNEL_VERSION}_kernelsu.ko"
+                KO_PATHMASK_NAME="${ANDROID_VERSION}-${KERNEL_VERSION}_pathmask.ko"
+                echo "[+] 下载 ApkeSU ko: ${KO_KERNEL_NAME}"
+                curl -fsSL "${APKESU_KO_BASE}/${KO_KERNEL_NAME}" -o "prebuilt/kernelsu.ko" || echo "::warning::kernelsu.ko 下载失败，将尝试从源码编译"
+                echo "[+] 下载 ApkeSU ko: ${KO_PATHMASK_NAME}"
+                curl -fsSL "${APKESU_KO_BASE}/${KO_PATHMASK_NAME}" -o "prebuilt/pathmask.ko" || echo "::warning::pathmask.ko 下载失败"
+                ls -la prebuilt/ 2>/dev/null || true
+              fi
+              # ===== ko 处理结束 =====
               cd ..
               ;;
           esac
