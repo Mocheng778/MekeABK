@@ -224,10 +224,19 @@ jobs:
               download_manager_for_repo "ReSukiSU/ReSukiSU" "ReSukiSU"
               ;;
             "ApkeSU")
-              # ApkeSU - 直接从 Actions 产物下载（按 KSU_SHA 匹配对应 commit），
-              # 避免 Release 版本与内核驱动版本不匹配
-              echo "从 Actions 产物下载 ApkeSU Manager APK（按 KSU_SHA 匹配）..."
-              download_manager_for_repo "fixz232/ApkeSU" "ApkeSU"
+              # ApkeSU - 从最新 Release 下载（ApkeSU 仓库无 Actions build-manager 产物）
+              # 内核驱动版本会在 build.yml 中通过 KSU_VERSION_OVERRIDE 匹配此 Release 版本
+              echo "从 ApkeSU 最新 Release 下载 Manager APK..."
+              LATEST_TAG=$(curl -fsSL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+                "https://api.github.com/repos/fixz232/ApkeSU/releases/latest" | jq -r ".tag_name")
+              if [ -n "$LATEST_TAG" ] && [ "$LATEST_TAG" != "null" ]; then
+                download_tag_release_apk "fixz232/ApkeSU" "$LATEST_TAG" "ApkeSU" || {
+                  echo "::warning::从 Release 下载失败，尝试从 Actions 产物下载..."
+                  download_manager_for_repo "fixz232/ApkeSU" "ApkeSU"
+                }
+              else
+                download_manager_for_repo "fixz232/ApkeSU" "ApkeSU"
+              fi
               ;;
             *)
               echo "::error::未知 KernelSU 变体: ${{ inputs.kernelsu_variant }}"
