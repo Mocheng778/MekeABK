@@ -1405,9 +1405,18 @@ jobs:
               fi
               echo "KSU_VERSION_OVERRIDE=$KSU_VERSION_OVERRIDE" >> $GITHUB_ENV
 
-              # ===== 从源码编译 KSU（不使用预编译 ko，确保 selinux_hide 等功能完整）=====
-              echo "[+] ApkeSU 将从源码编译 KSU（不下载预编译 ko）"
-              echo "[+] CONFIG_KSU=y + CONFIG_KPM=y 已在 defconfig 中配置"
+              # ===== 下载 ApkeSU 预编译 ko 模块 =====
+              mkdir -p prebuilt
+              ANDROID_VERSION="${{ inputs.android_version }}"
+              KERNEL_VERSION="${{ inputs.kernel_version }}"
+              APKESU_KO_BASE="https://raw.githubusercontent.com/fixz232/ApkeSU/ApkeSU/userspace/ksud/bin/aarch64"
+              KO_KERNEL_NAME="${ANDROID_VERSION}-${KERNEL_VERSION}_kernelsu.ko"
+              KO_PATHMASK_NAME="${ANDROID_VERSION}-${KERNEL_VERSION}_pathmask.ko"
+              echo "[+] 下载 ApkeSU ko: ${KO_KERNEL_NAME}"
+              curl -fsSL "${APKESU_KO_BASE}/${KO_KERNEL_NAME}" -o "prebuilt/kernelsu.ko" || echo "::warning::kernelsu.ko 下载失败，将尝试从源码编译"
+              echo "[+] 下载 ApkeSU ko: ${KO_PATHMASK_NAME}"
+              curl -fsSL "${APKESU_KO_BASE}/${KO_PATHMASK_NAME}" -o "prebuilt/pathmask.ko" || echo "::warning::pathmask.ko 下载失败"
+              ls -la prebuilt/ 2>/dev/null || true
               # ===== ko 下载结束 =====
               cd ..
               ;;
