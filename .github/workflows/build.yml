@@ -726,18 +726,6 @@ jobs:
           git clone https://github.com/WildKernels/AnyKernel3.git -b "$ANYKERNEL_BRANCH"
           rm -rf AnyKernel3/.git
 
-          # ApkeSU: 在 AnyKernel3 install.sh 中追加 ksu_susfs 安装逻辑
-          if [ "${{ inputs.ksu_variant }}" = "ApkeSU" ]; then
-            echo "[+] 注入 ksu_susfs 自动安装到 AnyKernel3"
-            printf '\n# === ApkeSU ksu_susfs auto-install ===\n' >> AnyKernel3/install.sh
-            printf 'if [ -f /tmp/anykernel/susfs-bin/ksu_susfs ]; then\n' >> AnyKernel3/install.sh
-            printf '  ui_print "- Installing ksu_susfs"\n' >> AnyKernel3/install.sh
-            printf '  mkdir -p /data/adb/ksu/bin\n' >> AnyKernel3/install.sh
-            printf '  cp /tmp/anykernel/susfs-bin/ksu_susfs /data/adb/ksu/bin/ksu_susfs\n' >> AnyKernel3/install.sh
-            printf '  chmod 755 /data/adb/ksu/bin/ksu_susfs\n' >> AnyKernel3/install.sh
-            printf 'fi\n' >> AnyKernel3/install.sh
-          fi
-
           if [ "${{ inputs.enable_susfs }}" == "true" ]; then
             echo "克隆 SUSFS (分支: $SUSFS_BRANCH)..."
             retry_git_clone https://gitlab.com/simonpunk/susfs4ksu.git "$SUSFS_BRANCH" susfs4ksu
@@ -6774,16 +6762,6 @@ jobs:
               echo "[+] 已复制 pathmask.ko 到 AnyKernel3/modules/"
             fi
             ls -la modules/ 2>/dev/null || true
-          fi
-          # ===== 嵌入 ksu_susfs 用户态工具（ApkeSU）=====
-          if [ "${{ inputs.ksu_variant }}" = "ApkeSU" ]; then
-            mkdir -p susfs-bin
-            if curl -fsSL "https://raw.githubusercontent.com/sidex15/susfs4ksu-binaries/universal-binary/ksu_susfs_arm64" -o susfs-bin/ksu_susfs; then
-              chmod +x susfs-bin/ksu_susfs
-              echo "[+] 已下载 ksu_susfs 用户态工具"
-            else
-              echo "::warning::下载 ksu_susfs 失败，SUSFS 管理页可能提示找不到工具"
-            fi
           fi
           # ===== ko 复制结束 =====
 
