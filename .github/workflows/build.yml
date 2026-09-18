@@ -2624,7 +2624,7 @@ jobs:
           PY
 
       - name: 桥接 ApkeSU SUSFS 符号
-        if: inputs.ksu_variant == 'ApkeSU' && inputs.enable_susfs
+        if: false # 上游新版 Kbuild 已内置 SUSFS 变体文件（sucompat_susfs.o 等），不再需要手动桥接
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: susfs
@@ -2959,7 +2959,7 @@ jobs:
           PY
 
       - name: 修复 50_add 内核插桩 ApkeSU 兼容
-        if: inputs.ksu_variant == 'ApkeSU' && inputs.enable_susfs
+        if: false # 上游新版 Kbuild 已内置 SUSFS 变体，不再需要手动注入 ksu_susfs_compat.o
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: susfs
