@@ -6656,7 +6656,12 @@ jobs:
               set -e
               # ===== 修复结束 =====
 
-              tools/bazel build --disk_cache=/home/runner/.cache/bazel --config=fast $LTO_FLAG $FRAG_FLAG //common:kernel_aarch64_dist || exit 1
+              # 清理 bazel 缓存，确保使用最新内核源码编译
+              tools/bazel clean --expunge || true
+              rm -rf /home/runner/.cache/bazel/* || true
+              echo "[+] bazel 缓存已清理"
+
+              tools/bazel build --config=fast $LTO_FLAG $FRAG_FLAG //common:kernel_aarch64_dist || exit 1
               strings ./bazel-bin/common/kernel_aarch64/Image | grep 'Linux version'
             fi
 
