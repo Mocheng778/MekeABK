@@ -4057,6 +4057,8 @@ jobs:
           EOF
           if [ "${{ inputs.ksu_variant }}" != "None" ] && ! feature_disabled kernelsu; then
             echo "CONFIG_KSU=y" >> "$DEFCONFIG"
+            echo "CONFIG_SECCOMP=y" >> "$DEFCONFIG"
+            echo "CONFIG_KSU_GKI_SECCOMP_HOOK=y" >> "$DEFCONFIG"
           fi
 
           kpm_config_supported="false"
@@ -4159,6 +4161,8 @@ jobs:
           fi
 
           cat >> "$DEFCONFIG" << 'EOF'
+          CONFIG_SECCOMP=y
+          CONFIG_KSU_GKI_SECCOMP_HOOK=y
           CONFIG_KSU_SUSFS=y
           CONFIG_KSU_SUSFS_SUS_PATH=y
           CONFIG_KSU_SUSFS_SUS_MOUNT=y
