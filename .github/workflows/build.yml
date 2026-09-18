@@ -3107,6 +3107,16 @@ jobs:
               text = text.rstrip() + "\n" + block + "\n"
           path.write_text(text)
 
+          final_text = path.read_text()
+          if not pattern.search(final_text):
+              raise SystemExit(f"{path} 注入后仍缺少 config KPM")
+
+          with github_env.open("a", encoding="utf-8") as handle:
+              handle.write("ABK_KPM_KCONFIG_STATUS=injected\n")
+              handle.write("ABK_KPM_KCONFIG_READY=true\n")
+          print(f"已注入 {path} 的 KPM Kconfig 符号")
+          PY
+
       - name: 补丁：保留管理器 seccomp 状态（显示过滤模式）
         if: inputs.ksu_variant == 'ApkeSU'
         working-directory: ${{ env.KERNEL_ROOT }}
@@ -3123,18 +3133,28 @@ jobs:
             exit 0
           fi
           HOOK="$KSU_DIR/hook/setuid_hook_susfs.c"
-          sed -i 's|ksu_disable_zygote_seccomp(ruid);|// ksu_disable_zygote_seccomp(ruid); // ABK: keep seccomp filter|g' "$HOOK"
+          sed -i 's|ksu_disable_zygote_seccomp(ruid);|// ksu_disable_zygote_seccomp(ruid); // ABK|g' "$HOOK"
           echo "[+] 已补丁 $HOOK"
 
-          final_text = path.read_text()
-          if not pattern.search(final_text):
-              raise SystemExit(f"{path} 注入后仍缺少 config KPM")
-
-          with github_env.open("a", encoding="utf-8") as handle:
-              handle.write("ABK_KPM_KCONFIG_STATUS=injected\n")
-              handle.write("ABK_KPM_KCONFIG_READY=true\n")
-          print(f"已注入 {path} 的 KPM Kconfig 符号")
-          PY
+      - name: 应用 Kernel 特定补丁
+      - name: 补丁：保留管理器 seccomp 状态（显示过滤模式）
+        if: inputs.ksu_variant == 'ApkeSU'
+        working-directory: ${{ env.KERNEL_ROOT }}
+        run: |
+          KSU_DIR=""
+          for dir in ./common/drivers/kernelsu ./drivers/kernelsu ./KernelSU/kernel ./kernel; do
+            if [ -f "$dir/hook/setuid_hook_susfs.c" ]; then
+              KSU_DIR="$dir"
+              break
+            fi
+          done
+          if [ -z "$KSU_DIR" ]; then
+            echo "::warning::未找到 setuid_hook_susfs.c，跳过 seccomp 补丁"
+            exit 0
+          fi
+          HOOK="$KSU_DIR/hook/setuid_hook_susfs.c"
+          sed -i 's|ksu_disable_zygote_seccomp(ruid);|// ksu_disable_zygote_seccomp(ruid); // ABK|g' "$HOOK"
+          echo "[+] 已补丁 $HOOK：保留 seccomp 过滤模式显示"
 
       - name: 应用 Kernel 特定补丁
         working-directory: ${{ env.KERNEL_ROOT }}/common
