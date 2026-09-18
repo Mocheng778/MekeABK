@@ -6767,6 +6767,14 @@ jobs:
             fi
             ls -la modules/ 2>/dev/null || true
           fi
+
+          # ===== 创建 SUSFS 配置目录（刷入时自动处理）=====
+          if [ "${{ inputs.enable_susfs }}" = "true" ]; then
+            printf 'if [ -L /data/adb/ksu/susfs ]; then rm -f /data/adb/ksu/susfs; fi\n' > customize.sh
+            printf 'mkdir -p /data/adb/ksu/susfs/generations\n' >> customize.sh
+            printf 'ui_print "[APKESU] SUSFS config dir ready"\n' >> customize.sh
+            echo "[+] 已添加 SUSFS 目录初始化脚本"
+          fi
           # ===== ko 复制结束 =====
 
           zip -r "../$ZIP_NAME" ./*
