@@ -6793,18 +6793,16 @@ jobs:
               chmod 0755 tools/ksu_susfs
               echo "[+] 已嵌入 ksu_susfs 到 AnyKernel3/tools/"
 
-              # 创建 post-fs-data 脚本：放置 ksu_susfs 并创建配置目录
-              cat >> customization.sh << 'CUSTOM_EOF'
-              # ApkeSU SUSFS 自动安装
-              if [ -f tools/ksu_susfs ]; then
-                mkdir -p /data/adb/ksu/bin
-                cp -f tools/ksu_susfs /data/adb/ksu/bin/ksu_susfs
-                chmod 0755 /data/adb/ksu/bin/ksu_susfs
-                chown 0:0 /data/adb/ksu/bin/ksu_susfs
-                mkdir -p /data/adb/ksu/susfs/generations
-                echo "[APKESU] ksu_susfs installed"
-              fi
-              CUSTOM_EOF
+              # 创建 customize.sh：放置 ksu_susfs 并创建配置目录
+              printf '# ApkeSU SUSFS 自动安装\n' > customize.sh
+              printf 'if [ -f tools/ksu_susfs ]; then\n' >> customize.sh
+              printf '  mkdir -p /data/adb/ksu/bin\n' >> customize.sh
+              printf '  cp -f tools/ksu_susfs /data/adb/ksu/bin/ksu_susfs\n' >> customize.sh
+              printf '  chmod 0755 /data/adb/ksu/bin/ksu_susfs\n' >> customize.sh
+              printf '  chown 0:0 /data/adb/ksu/bin/ksu_susfs\n' >> customize.sh
+              printf '  mkdir -p /data/adb/ksu/susfs/generations\n' >> customize.sh
+              printf '  ui_print "[APKESU] ksu_susfs installed"\n' >> customize.sh
+              printf 'fi\n' >> customize.sh
               echo "[+] 已添加 SUSFS post-install 脚本"
             fi
           fi
