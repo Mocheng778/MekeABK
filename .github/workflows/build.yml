@@ -6785,6 +6785,28 @@ jobs:
               echo "[+] 已复制 pathmask.ko 到 AnyKernel3/modules/"
             fi
             ls -la modules/ 2>/dev/null || true
+
+            # ===== 嵌入 ksu_susfs 用户态工具 =====
+            if [ "${{ inputs.enable_susfs }}" = "true" ]; then
+              mkdir -p tools
+              curl -fsSL "https://raw.githubusercontent.com/sidex15/susfs4ksu-binaries/universal-binary/ksu_susfs_arm64" -o tools/ksu_susfs
+              chmod 0755 tools/ksu_susfs
+              echo "[+] 已嵌入 ksu_susfs 到 AnyKernel3/tools/"
+
+              # 创建 post-fs-data 脚本：放置 ksu_susfs 并创建配置目录
+              cat >> customization.sh << 'CUSTOM_EOF'
+              # ApkeSU SUSFS 自动安装
+              if [ -f tools/ksu_susfs ]; then
+                mkdir -p /data/adb/ksu/bin
+                cp -f tools/ksu_susfs /data/adb/ksu/bin/ksu_susfs
+                chmod 0755 /data/adb/ksu/bin/ksu_susfs
+                chown 0:0 /data/adb/ksu/bin/ksu_susfs
+                mkdir -p /data/adb/ksu/susfs/generations
+                echo "[APKESU] ksu_susfs installed"
+              fi
+              CUSTOM_EOF
+              echo "[+] 已添加 SUSFS post-install 脚本"
+            fi
           fi
           # ===== ko 复制结束 =====
 
