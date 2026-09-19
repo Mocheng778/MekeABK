@@ -1138,8 +1138,9 @@ jobs:
                 return 0
               fi
               echo "::warning::GKI repo sync failed (attempt ${attempt}/6, jobs=${sync_jobs}); retrying"
-              # 清理失败的 sync 状态
-              rm -rf .repo/project-objects .repo/projects 2>/dev/null || true
+              # 不要删 .repo/projects！会导致 git gc "not a git repository" 错误
+              # 仅清理锁文件，允许 repo 自行恢复状态
+              find .repo -name "*.lock" -delete 2>/dev/null || true
               # 递增等待：15s, 30s, 45s, 60s, 75s
               sleep "$((attempt * 15))"
             done
