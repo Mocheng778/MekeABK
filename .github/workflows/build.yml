@@ -4214,7 +4214,7 @@ jobs:
                       defined.update(pat.findall(p.read_text(errors="ignore")))
                   except Exception:
                       pass
-          lines = ["CONFIG_SECCOMP=y"]
+          lines = []
           skipped = []
           for sym in enable_syms:
               if sym in defined:
