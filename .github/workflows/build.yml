@@ -6708,54 +6708,95 @@ jobs:
 
               # ===== 修复 build_image.py UnicodeDecodeError =====
               # mkfs.erofs 输出含非 UTF-8 字节导致 RunAndCheckOutput 解码崩溃
+              # build_image 可能是目录也可能是 Python zipapp（无后缀zip），common.py 在其中
               set +e
               echo "[debug] UnicodeDecodeError修复: pwd=$(pwd)"
-              COMMON_PY=""
-              # 1. 直接尝试已知路径（内核源码根/prebuilts/...）
-              for _candidate in \
-                "$PWD/prebuilts/kernel-build-tools/linux-x86/bin/build_image/common.py" \
-                "$(dirname "$PWD")/prebuilts/kernel-build-tools/linux-x86/bin/build_image/common.py" \
-                "$GITHUB_WORKSPACE/prebuilts/kernel-build-tools/linux-x86/bin/build_image/common.py"; do
-                if [ -f "$_candidate" ]; then
-                  COMMON_PY="$_candidate"
-                  break
-                fi
-              done
-              # 2. 兜底：find -L 搜索
-              if [ -z "$COMMON_PY" ]; then
-                for _search_root in . .. "$GITHUB_WORKSPACE" /home/runner; do
-                  [ -z "$COMMON_PY" ] || break
-                  COMMON_PY="$(find -L "$_search_root" -path "*/build_image/common.py" -type f 2>/dev/null | head -1)"
-                done
-              fi
-              unset _candidate _search_root
-              if [ -n "$COMMON_PY" ]; then
-                echo "[+] 找到 common.py: $COMMON_PY"
-                python3 - "$COMMON_PY" <<'PYEOF'
-            import sys, re
-            path = sys.argv[1]
-            with open(path, 'r', encoding='utf-8', errors='replace') as f:
-                content = f.read()
-            original = content
-            def add_errors(m):
-                full = m.group(0)
-                if 'errors=' in full:
-                    return full
-                return full.replace('True', 'True, errors="replace"', 1)
-            pattern = r'(?:text|universal_newlines)\s*=\s*True(?=\s*[,)])'
-            content = re.sub(pattern, add_errors, content, flags=re.IGNORECASE)
-            if content != original:
-                with open(path, 'w', encoding='utf-8') as f:
-                    f.write(content)
-                print(f"[+] 已修补 {path}")
-            else:
-                print(f"[+] {path} 无需修改")
+              python3 <<'PYEOF'
+            import os, re, zipfile, shutil, tempfile
+
+            def patch_common_py(content):
+                """给 subprocess text=True 调用加 errors='replace'"""
+                original = content
+                def add_errors(m):
+                    full = m.group(0)
+                    if 'errors=' in full:
+                        return full
+                    return full.replace('True', 'True, errors="replace"', 1)
+                pattern = r'(?:text|universal_newlines)\s*=\s*True(?=\s*[,)])'
+                return re.sub(pattern, add_errors, content, flags=re.IGNORECASE)
+
+            # 搜索 build_image 路径（目录或文件）
+            candidates = []
+            for root in ['.', '..', os.environ.get('GITHUB_WORKSPACE', ''), '/home/runner']:
+                if not root or not os.path.isdir(root):
+                    continue
+                for dirpath, dirnames, filenames in os.walk(root):
+                    if 'build_image' in dirnames or 'build_image' in filenames:
+                        p = os.path.join(dirpath, 'build_image')
+                        if p not in candidates:
+                            candidates.append(p)
+                    if len(candidates) >= 5:
+                        break
+                if len(candidates) >= 5:
+                    break
+
+            patched = False
+            for bi_path in candidates:
+                if os.path.isdir(bi_path):
+                    # 目录：直接修补 common.py
+                    common_py = os.path.join(bi_path, 'common.py')
+                    if os.path.isfile(common_py):
+                        with open(common_py, 'r', encoding='utf-8', errors='replace') as f:
+                            content = f.read()
+                        new_content = patch_common_py(content)
+                        if new_content != content:
+                            with open(common_py, 'w', encoding='utf-8') as f:
+                                f.write(new_content)
+                            print(f"[+] 已修补(目录): {common_py}")
+                        else:
+                            print(f"[+] 无需修改(目录): {common_py}")
+                        patched = True
+                        break
+                elif os.path.isfile(bi_path) and zipfile.is_zipfile(bi_path):
+                    # zipapp：解压→修补→重新打包
+                    print(f"[+] build_image 是 zipapp: {bi_path}")
+                    tmpdir = tempfile.mkdtemp()
+                    try:
+                        with zipfile.ZipFile(bi_path, 'r') as zf:
+                            zf.extractall(tmpdir)
+                        common_py = os.path.join(tmpdir, 'common.py')
+                        if os.path.isfile(common_py):
+                            with open(common_py, 'r', encoding='utf-8', errors='replace') as f:
+                                content = f.read()
+                            new_content = patch_common_py(content)
+                            if new_content != content:
+                                with open(common_py, 'w', encoding='utf-8') as f:
+                                    f.write(new_content)
+                                # 重新打包
+                                backup = bi_path + '.bak'
+                                shutil.copy2(bi_path, backup)
+                                with zipfile.ZipFile(bi_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                                    for root_dir, _, files in os.walk(tmpdir):
+                                        for fn in files:
+                                            fp = os.path.join(root_dir, fn)
+                                            arcname = os.path.relpath(fp, tmpdir)
+                                            zf.write(fp, arcname)
+                                os.remove(backup)
+                                print(f"[+] 已修补(zipapp): {bi_path}")
+                            else:
+                                print(f"[+] 无需修改(zipapp): {bi_path}")
+                            patched = True
+                        else:
+                            print(f"[!] zipapp 中未找到 common.py: {bi_path}")
+                    finally:
+                        shutil.rmtree(tmpdir, ignore_errors=True)
+                    if patched:
+                        break
+
+            if not patched:
+                print("::warning::未找到可修补的 build_image/common.py")
+                print(f"[debug] 搜索到的 build_image 候选: {candidates}")
             PYEOF
-              else
-                echo "::warning::未找到 build_image/common.py，UnicodeDecodeError 修复跳过"
-                echo "[debug] ls prebuilts: $(ls -la prebuilts/ 2>/dev/null || echo 'no prebuilts dir')"
-                find -L . -name "common.py" -type f 2>/dev/null | head -10 || true
-              fi
               set -e
               # ===== 修复结束 =====
 
