@@ -1389,30 +1389,30 @@ jobs:
               fi
               # ===== 修复结束 =====
 
-              # ===== 修复 ApkeSU include/ 头文件跨内核版本找不到（klog.h 同类问题）=====
-              # klog.h / ksu.h / arch.h / util.h 均位于 kernel/include/，各子目录 .c/.h
-              # 以裸名 #include "klog.h" 等形式引用，依赖 -I$(KSU_KERNEL_DIR)/include。
-              # 部分内核版本（如 android14-6.1-84）该二级 -I 子路径解析失败，导致头文件
-              # 找不到。已证实 -I$(KSU_KERNEL_DIR)（即 kernel/ 根）在这些版本可用
-              # （feature/sulog.h 经该路径成功解析），故把这四个头文件同时复制到
-              # kernel/ 根目录（一次性覆盖全部子目录），并保留 feature/、hook/ 就近副本
-              # （相对路径兜底，与既有 klog.h 修复一致）。
-              for _abk_h in klog.h ksu.h arch.h util.h; do
-                if [ -f "KernelSU/kernel/include/$_abk_h" ]; then
-                  cp -f "KernelSU/kernel/include/$_abk_h" "KernelSU/kernel/$_abk_h"
-                  cp -f "KernelSU/kernel/include/$_abk_h" "KernelSU/kernel/feature/$_abk_h"
-                  cp -f "KernelSU/kernel/include/$_abk_h" "KernelSU/kernel/hook/$_abk_h"
-                fi
-              done
-              echo "[+] ApkeSU include/ 头文件(klog/ksu/arch/util)已复制到 kernel/ 根 + feature/ + hook/"
-              unset _abk_h
-              # 同时复制 include/linux/ 子目录（abk_control.h）到 kernel/linux/
-              if [ -d "KernelSU/kernel/include/linux" ]; then
-                rm -rf KernelSU/kernel/linux
-                mkdir -p KernelSU/kernel/linux
-                cp -rf KernelSU/kernel/include/linux/* KernelSU/kernel/linux/
-                echo "[+] ApkeSU include/linux/ 子目录已复制到 kernel/linux/"
+              # ===== 修复 ApkeSU include/ 头文件跨内核版本找不到 =====
+              # 部分内核版本（如 android14-6.1-84）上 -I$(KSU_KERNEL_DIR)/include 二级路径
+              # 解析失败，而 -I$(KSU_KERNEL_DIR)（kernel/ 根）可用。把 include/ 下所有内容
+              # （文件+子目录，uapi 除外已单独处理）递归复制到 kernel/ 根，一次性全覆盖。
+              if [ -d "KernelSU/kernel/include" ]; then
+                # 复制所有文件
+                find KernelSU/kernel/include -maxdepth 1 -type f -exec cp -f {} KernelSU/kernel/ \;
+                # 复制所有子目录（排除 uapi symlink，已单独处理）
+                for _abk_dir in KernelSU/kernel/include/*/; do
+                  _dir_name=$(basename "$_abk_dir")
+                  if [ "$_dir_name" != "uapi" ]; then
+                    rm -rf "KernelSU/kernel/$_dir_name"
+                    cp -rf "$_abk_dir" "KernelSU/kernel/$_dir_name"
+                  fi
+                done
+                # feature/ 和 hook/ 就近兜底（仅根目录 .h 文件）
+                for _abk_h in KernelSU/kernel/include/*.h; do
+                  [ -f "$_abk_h" ] || continue
+                  cp -f "$_abk_h" KernelSU/kernel/feature/
+                  cp -f "$_abk_h" KernelSU/kernel/hook/
+                done
+                echo "[+] ApkeSU include/ 全部内容已递归复制到 kernel/ 根（含所有子目录）"
               fi
+              unset _abk_dir _dir_name _abk_h
               # ===== ApkeSU include/ 头文件修复结束 =====
 
               cd KernelSU
