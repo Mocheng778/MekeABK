@@ -1406,6 +1406,13 @@ jobs:
               done
               echo "[+] ApkeSU include/ 头文件(klog/ksu/arch/util)已复制到 kernel/ 根 + feature/ + hook/"
               unset _abk_h
+              # 同时复制 include/linux/ 子目录（abk_control.h）到 kernel/linux/
+              if [ -d "KernelSU/kernel/include/linux" ]; then
+                rm -rf KernelSU/kernel/linux
+                mkdir -p KernelSU/kernel/linux
+                cp -rf KernelSU/kernel/include/linux/* KernelSU/kernel/linux/
+                echo "[+] ApkeSU include/linux/ 子目录已复制到 kernel/linux/"
+              fi
               # ===== ApkeSU include/ 头文件修复结束 =====
 
               cd KernelSU
