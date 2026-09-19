@@ -1376,10 +1376,10 @@ jobs:
               # ApkeSU 的 kernel/include/uapi 是指向 ../../uapi 的 git symlink，
               # 嵌套 symlink 在内核构建中可能无法正确解析，替换为真实文件
               if [ -d "KernelSU/uapi" ]; then
-                rm -f KernelSU/kernel/include/uapi
+                rm -rf KernelSU/kernel/include/uapi
                 mkdir -p KernelSU/kernel/include/uapi
-                cp -f KernelSU/uapi/*.h KernelSU/kernel/include/uapi/
-                echo "[+] ApkeSU uapi 头文件已复制到 KernelSU/kernel/include/uapi/"
+                cp -rf KernelSU/uapi/* KernelSU/kernel/include/uapi/
+                echo "[+] ApkeSU uapi 目录已递归复制到 KernelSU/kernel/include/uapi/"
               else
                 echo "::warning::KernelSU/uapi 目录不存在，跳过 uapi 头文件修复"
               fi
