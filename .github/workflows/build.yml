@@ -1385,13 +1385,24 @@ jobs:
               fi
               # ===== 修复结束 =====
 
-              # ===== 修复 klog.h 头文件找不到（部分内核版本 include 路径问题）=====
-              if [ -f "KernelSU/kernel/include/klog.h" ]; then
-                cp -f KernelSU/kernel/include/klog.h KernelSU/kernel/feature/klog.h
-                cp -f KernelSU/kernel/include/klog.h KernelSU/kernel/hook/klog.h
-                echo "[+] klog.h 已复制到 feature/ 和 hook/ 目录"
-              fi
-              # ===== klog.h 修复结束 =====
+              # ===== 修复 ApkeSU include/ 头文件跨内核版本找不到（klog.h 同类问题）=====
+              # klog.h / ksu.h / arch.h / util.h 均位于 kernel/include/，各子目录 .c/.h
+              # 以裸名 #include "klog.h" 等形式引用，依赖 -I$(KSU_KERNEL_DIR)/include。
+              # 部分内核版本（如 android14-6.1-84）该二级 -I 子路径解析失败，导致头文件
+              # 找不到。已证实 -I$(KSU_KERNEL_DIR)（即 kernel/ 根）在这些版本可用
+              # （feature/sulog.h 经该路径成功解析），故把这四个头文件同时复制到
+              # kernel/ 根目录（一次性覆盖全部子目录），并保留 feature/、hook/ 就近副本
+              # （相对路径兜底，与既有 klog.h 修复一致）。
+              for _abk_h in klog.h ksu.h arch.h util.h; do
+                if [ -f "KernelSU/kernel/include/$_abk_h" ]; then
+                  cp -f "KernelSU/kernel/include/$_abk_h" "KernelSU/kernel/$_abk_h"
+                  cp -f "KernelSU/kernel/include/$_abk_h" "KernelSU/kernel/feature/$_abk_h"
+                  cp -f "KernelSU/kernel/include/$_abk_h" "KernelSU/kernel/hook/$_abk_h"
+                fi
+              done
+              echo "[+] ApkeSU include/ 头文件(klog/ksu/arch/util)已复制到 kernel/ 根 + feature/ + hook/"
+              unset _abk_h
+              # ===== ApkeSU include/ 头文件修复结束 =====
 
               cd KernelSU
               KSU_GIT_VERSION=$(git rev-list --count HEAD)
