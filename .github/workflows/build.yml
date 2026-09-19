@@ -1082,7 +1082,21 @@ jobs:
           FORMATTED_BRANCH="${{ inputs.android_version }}-${{ inputs.kernel_version }}-${{ inputs.os_patch_level }}"
           echo "初始化 repo，分支: common-${FORMATTED_BRANCH}"
 
-          $REPO init --depth=1 -u https://android.googlesource.com/kernel/manifest -b common-${FORMATTED_BRANCH} --repo-rev=v2.16
+          # repo init 偶发 googlesource 网络抖动（504/超时），加重试避免误判为“分支不存在”
+          repo_init_retry() {
+            local attempt
+            for attempt in 1 2 3; do
+              if $REPO init --depth=1 -u https://android.googlesource.com/kernel/manifest -b "common-${FORMATTED_BRANCH}" --repo-rev=v2.16; then
+                return 0
+              fi
+              echo "::warning::repo init 失败 (attempt ${attempt}/3)，清理 .repo 后重试" >&2
+              rm -rf .repo
+              sleep "$((attempt * 10))"
+            done
+            echo "::error::repo init 连续失败: common-${FORMATTED_BRANCH}" >&2
+            return 1
+          }
+          repo_init_retry
 
           retry_git_ls_remote() {
             local repo_url="$1"
@@ -4062,7 +4076,13 @@ jobs:
           if [ "${{ inputs.ksu_variant }}" != "None" ] && ! feature_disabled kernelsu; then
             echo "CONFIG_KSU=y" >> "$DEFCONFIG"
             echo "CONFIG_SECCOMP=y" >> "$DEFCONFIG"
-            echo "CONFIG_KSU_GKI_SECCOMP_HOOK=y" >> "$DEFCONFIG"
+            # KSU_GKI_SECCOMP_HOOK 仅在当前 KSU 源码 Kconfig 实际定义时写入，
+            # 避免 bazel defconfig_fragment 因不存在的符号而创建内核配置失败。
+            if grep -rEq "^\s*config\s+KSU_GKI_SECCOMP_HOOK\b" common/ --include="Kconfig*" 2>/dev/null; then
+              echo "CONFIG_KSU_GKI_SECCOMP_HOOK=y" >> "$DEFCONFIG"
+            else
+              echo "配置内核选项: 当前 KSU 源码未定义 KSU_GKI_SECCOMP_HOOK，跳过写入"
+            fi
           fi
 
           kpm_config_supported="false"
@@ -4164,20 +4184,49 @@ jobs:
             fi
           fi
 
-          cat >> "$DEFCONFIG" << 'EOF'
-          CONFIG_SECCOMP=y
-          CONFIG_KSU_GKI_SECCOMP_HOOK=y
-          CONFIG_KSU_SUSFS=y
-          CONFIG_KSU_SUSFS_SUS_PATH=y
-          CONFIG_KSU_SUSFS_SUS_MOUNT=y
-          CONFIG_KSU_SUSFS_SUS_KSTAT=y
-          CONFIG_KSU_SUSFS_SPOOF_UNAME=y
-          CONFIG_KSU_SUSFS_ENABLE_LOG=y
-          CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
-          CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
-          CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
-          CONFIG_KSU_SUSFS_SUS_MAP=y
-          EOF
+          # 仅写入当前内核 Kconfig 实际定义的 SUSFS / seccomp 符号，
+          # 避免 bazel --defconfig_fragment 因不存在的符号而“内核配置创建失败”。
+          # 不同 GKI 版本（5.10/5.15/6.1/6.6/6.12）的 SUSFS4KSU 暴露的符号集不同。
+          python3 - "$DEFCONFIG" <<'PY'
+          import os, re
+          from pathlib import Path
+
+          defconfig = os.environ["DEFCONFIG"]
+          enable_syms = [
+              "KSU_GKI_SECCOMP_HOOK",
+              "KSU_SUSFS",
+              "KSU_SUSFS_SUS_PATH",
+              "KSU_SUSFS_SUS_MOUNT",
+              "KSU_SUSFS_SUS_KSTAT",
+              "KSU_SUSFS_SPOOF_UNAME",
+              "KSU_SUSFS_ENABLE_LOG",
+              "KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS",
+              "KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG",
+              "KSU_SUSFS_OPEN_REDIRECT",
+              "KSU_SUSFS_SUS_MAP",
+          ]
+          defined = set()
+          pat = re.compile(r"(?m)^\s*config\s+([A-Za-z0-9_]+)\b")
+          kroot = Path("common")
+          if kroot.is_dir():
+              for p in kroot.rglob("Kconfig*"):
+                  try:
+                      defined.update(pat.findall(p.read_text(errors="ignore")))
+                  except Exception:
+                      pass
+          lines = ["CONFIG_SECCOMP=y"]
+          skipped = []
+          for sym in enable_syms:
+              if sym in defined:
+                  lines.append("CONFIG_%s=y" % sym)
+              else:
+                  skipped.append("CONFIG_%s" % sym)
+          with open(defconfig, "a") as f:
+              f.write("\n".join(lines) + "\n")
+          if skipped:
+              print("SUSFS: 当前内核 Kconfig 未定义，跳过: " + ", ".join(skipped))
+          print("SUSFS: 已写入: " + ", ".join(lines))
+          PY
 
       - name: 配置内核名称
         working-directory: ${{ env.KERNEL_ROOT }}
