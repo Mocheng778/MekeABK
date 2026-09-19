@@ -1379,7 +1379,11 @@ jobs:
                 rm -rf KernelSU/kernel/include/uapi
                 mkdir -p KernelSU/kernel/include/uapi
                 cp -rf KernelSU/uapi/* KernelSU/kernel/include/uapi/
-                echo "[+] ApkeSU uapi 目录已递归复制到 KernelSU/kernel/include/uapi/"
+                # 同时复制到 kernel/uapi/，由可靠的 -Ikernel/ 路径覆盖（6.1等版本 -Ikernel/include/ 失效）
+                rm -rf KernelSU/kernel/uapi
+                mkdir -p KernelSU/kernel/uapi
+                cp -rf KernelSU/uapi/* KernelSU/kernel/uapi/
+                echo "[+] ApkeSU uapi 目录已复制到 kernel/include/uapi/ 和 kernel/uapi/"
               else
                 echo "::warning::KernelSU/uapi 目录不存在，跳过 uapi 头文件修复"
               fi
