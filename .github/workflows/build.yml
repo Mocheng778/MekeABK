@@ -1125,14 +1125,16 @@ jobs:
 
           repo_sync_retry() {
             local attempt
-            for attempt in 1 2 3; do
+            for attempt in 1 2 3 4 5; do
               if $REPO --trace sync -c -j$(nproc --all) --no-tags --fail-fast; then
                 return 0
               fi
-              echo "::warning::GKI repo sync failed (attempt ${attempt}/3); retrying"
-              sleep "$((attempt * 5))"
+              echo "::warning::GKI repo sync failed (attempt ${attempt}/5); retrying"
+              # 清理失败的 sync 状态，避免后续重试被残留锁/对象阻塞
+              rm -rf .repo/project-objects .repo/projects 2>/dev/null || true
+              sleep "$((attempt * 10))"
             done
-            echo "::error::GKI repo sync failed after 3 attempts"
+            echo "::error::GKI repo sync failed after 5 attempts"
             return 1
           }
           repo_sync_retry
