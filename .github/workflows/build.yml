@@ -3117,6 +3117,25 @@ jobs:
           print(f"已注入 {path} 的 KPM Kconfig 符号")
           PY
 
+      - name: 补丁：保留管理器 seccomp 过滤模式显示
+        if: inputs.ksu_variant == 'ApkeSU'
+        working-directory: ${{ env.KERNEL_ROOT }}
+        run: |
+          KSU_DIR=""
+          for dir in ./common/drivers/kernelsu ./drivers/kernelsu ./KernelSU/kernel ./kernel; do
+            if [ -f "$dir/hook/setuid_hook_susfs.c" ]; then
+              KSU_DIR="$dir"
+              break
+            fi
+          done
+          if [ -z "$KSU_DIR" ]; then
+            echo "::warning::未找到 setuid_hook_susfs.c，跳过"
+            exit 0
+          fi
+          HOOK="$KSU_DIR/hook/setuid_hook_susfs.c"
+          sed -i 's|ksu_disable_zygote_seccomp(ruid);|// ksu_disable_zygote_seccomp(ruid); // ABK|g' "$HOOK"
+          echo "[+] 已补丁 $HOOK"
+
       - name: 应用 Kernel 特定补丁
         working-directory: ${{ env.KERNEL_ROOT }}/common
         run: |
