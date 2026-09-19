@@ -1385,6 +1385,14 @@ jobs:
               fi
               # ===== 修复结束 =====
 
+              # ===== 修复 klog.h 头文件找不到（部分内核版本 include 路径问题）=====
+              if [ -f "KernelSU/kernel/include/klog.h" ]; then
+                cp -f KernelSU/kernel/include/klog.h KernelSU/kernel/feature/klog.h
+                cp -f KernelSU/kernel/include/klog.h KernelSU/kernel/hook/klog.h
+                echo "[+] klog.h 已复制到 feature/ 和 hook/ 目录"
+              fi
+              # ===== klog.h 修复结束 =====
+
               cd KernelSU
               KSU_GIT_VERSION=$(git rev-list --count HEAD)
               KSU_VERSION=$((30000 + KSU_GIT_VERSION))
