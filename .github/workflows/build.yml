@@ -6795,6 +6795,7 @@ jobs:
                         wrapper = "\n".join([
                             "#!/bin/bash",
                             "export PYTHONPATH=/tmp/build_image_hack:${PYTHONPATH:-}",
+                            'export PATH="/usr/sbin:/usr/bin:/usr/local/bin:${PATH:-}"',
                             'exec "$0.real" "$@"',
                             "",
                         ])
