@@ -6911,13 +6911,44 @@ jobs:
             ls -la modules/ 2>/dev/null || true
           fi
 
-          # ===== 创建 SUSFS 配置目录（刷入时自动处理）=====
-          if [ "${{ inputs.enable_susfs }}" = "true" ]; then
-            printf 'if [ -L /data/adb/ksu/susfs ]; then rm -f /data/adb/ksu/susfs; fi\n' > customize.sh
-            printf 'mkdir -p /data/adb/ksu/susfs/generations\n' >> customize.sh
-            printf 'ui_print "[APKESU] SUSFS config dir ready"\n' >> customize.sh
-            echo "[+] 已添加 SUSFS 目录初始化脚本"
+          # ===== SUSFS 模块嵌入（同版本 ksu_susfs，避免 hide_mounts_unavailable）=====
+          if [ "${{ inputs.enable_susfs }}" = "true" ] && [ -d "$KERNEL_ROOT/susfs4ksu/ksu_module_susfs" ]; then
+            # 1. 复制同版本 ksu_susfs 二进制
+            if [ -f "$KERNEL_ROOT/susfs4ksu/ksu_module_susfs/tools/ksu_susfs_arm64" ]; then
+              cp -f "$KERNEL_ROOT/susfs4ksu/ksu_module_susfs/tools/ksu_susfs_arm64" ./ksu_susfs_arm64
+              echo "[+] 已复制同版本 ksu_susfs_arm64"
+            else
+              echo "::warning::未找到 ksu_susfs_arm64"
+            fi
+            # 2. 复制模块脚本（排除 META-INF/tools/README/customize）
+            mkdir -p susfs_module
+            for f in module.prop post-fs-data.sh service.sh boot-completed.sh sepolicy.rule utils.sh uninstall.sh; do
+              if [ -f "$KERNEL_ROOT/susfs4ksu/ksu_module_susfs/$f" ]; then
+                cp -f "$KERNEL_ROOT/susfs4ksu/ksu_module_susfs/$f" susfs_module/
+              fi
+            done
+            # 3. 追加安装逻辑到 anykernel.sh
+            cat >> anykernel.sh <<'SUSFS_EOF'
+          
+          # ===== SUSFS 模块自动安装（同版本 ksu_susfs）=====
+          if [ -f "$home/ksu_susfs_arm64" ]; then
+            mkdir -p /data/adb/ksu/bin
+            cp -f "$home/ksu_susfs_arm64" /data/adb/ksu/bin/ksu_susfs
+            chmod 755 /data/adb/ksu/bin/ksu_susfs
+            ui_print " [SUSFS] ksu_susfs (同版本) 已安装"
           fi
+          if [ -d "$home/susfs_module" ]; then
+            MODDIR=/data/adb/modules/susfs4ksu
+            mkdir -p "$MODDIR"
+            cp -rf "$home/susfs_module/"* "$MODDIR/" 2>/dev/null
+            chmod 644 "$MODDIR/post-fs-data.sh" "$MODDIR/service.sh" "$MODDIR/uninstall.sh" 2>/dev/null
+            touch "$MODDIR/update" 2>/dev/null
+            ui_print " [SUSFS] 模块已嵌入 /data/adb/modules/susfs4ksu"
+          fi
+          SUSFS_EOF
+            echo "[+] SUSFS 模块已嵌入 AnyKernel3（同版本 ksu_susfs）"
+          fi
+          # ===== SUSFS 嵌入结束 =====
           # ===== ko 复制结束 =====
 
           zip -r "../$ZIP_NAME" ./*
