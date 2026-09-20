@@ -6753,38 +6753,46 @@ jobs:
                         patched = True
                         break
                 elif os.path.isfile(bi_path) and zipfile.is_zipfile(bi_path):
-                    # zipapp：解压→修补→重新打包
+                    # zipapp：直接在内存中读取→修改→写回，避免解压路径安全问题
                     print(f"[+] build_image 是 zipapp: {bi_path}")
-                    tmpdir = tempfile.mkdtemp()
                     try:
                         with zipfile.ZipFile(bi_path, 'r') as zf:
-                            zf.extractall(tmpdir)
-                        common_py = os.path.join(tmpdir, 'common.py')
-                        if os.path.isfile(common_py):
-                            with open(common_py, 'r', encoding='utf-8', errors='replace') as f:
-                                content = f.read()
-                            new_content = patch_common_py(content)
-                            if new_content != content:
-                                with open(common_py, 'w', encoding='utf-8') as f:
-                                    f.write(new_content)
-                                # 重新打包
-                                backup = bi_path + '.bak'
-                                shutil.copy2(bi_path, backup)
-                                with zipfile.ZipFile(bi_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                                    for root_dir, _, files in os.walk(tmpdir):
-                                        for fn in files:
-                                            fp = os.path.join(root_dir, fn)
-                                            arcname = os.path.relpath(fp, tmpdir)
-                                            zf.write(fp, arcname)
-                                os.remove(backup)
-                                print(f"[+] 已修补(zipapp): {bi_path}")
+                            names = zf.namelist()
+                            print(f"[debug] zipapp 内容({len(names)}): {names[:10]}")
+                            # 递归查找 common.py（可能在子目录）
+                            common_name = None
+                            for n in names:
+                                if n.endswith('common.py') and '/'.join(n.split('/')[-2:]) in ('common.py', 'build_image/common.py'):
+                                    common_name = n
+                                    break
+                            if not common_name:
+                                for n in names:
+                                    if n.endswith('common.py'):
+                                        common_name = n
+                                        break
+                            if common_name:
+                                print(f"[+] zipapp 中找到 common.py: {common_name}")
+                                content = zf.read(common_name).decode('utf-8', errors='replace')
+                                new_content = patch_common_py(content)
+                                if new_content != content:
+                                    # 写新 zip：复制所有条目，替换 common.py
+                                    backup = bi_path + '.bak'
+                                    shutil.copy2(bi_path, backup)
+                                    with zipfile.ZipFile(bi_path, 'w', zipfile.ZIP_DEFLATED) as zf_out:
+                                        for item in zf.infolist():
+                                            if item.filename == common_name:
+                                                zf_out.writestr(item, new_content)
+                                            else:
+                                                zf_out.writestr(item, zf.read(item.filename))
+                                    os.remove(backup)
+                                    print(f"[+] 已修补(zipapp): {bi_path}")
+                                else:
+                                    print(f"[+] 无需修改(zipapp): {bi_path}")
+                                patched = True
                             else:
-                                print(f"[+] 无需修改(zipapp): {bi_path}")
-                            patched = True
-                        else:
-                            print(f"[!] zipapp 中未找到 common.py: {bi_path}")
-                    finally:
-                        shutil.rmtree(tmpdir, ignore_errors=True)
+                                print(f"[!] zipapp 中未找到 common.py，文件列表: {names}")
+                    except Exception as e:
+                        print(f"[!] 处理 zipapp 失败: {bi_path}: {e}")
                     if patched:
                         break
 
