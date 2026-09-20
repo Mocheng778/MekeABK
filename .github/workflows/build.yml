@@ -639,6 +639,17 @@ jobs:
           disable_broken_chrome_source
           apt_update_retry
           sudo apt-get install -y ccache python3 git curl build-essential libssl-dev bison flex libelf-dev dwarves erofs-utils
+          # 确保 fsck.erofs 在 PATH 中（erofs-utils 可能装到 /usr/sbin，bazel 沙箱可能找不到）
+          for tool in fsck.erofs mkfs.erofs; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+              found=$(find /usr -name "$tool" -type f 2>/dev/null | head -1)
+              if [ -n "$found" ]; then
+                sudo ln -sf "$found" "/usr/local/bin/$tool"
+                echo "[+] 链接 $tool -> $found"
+              fi
+            fi
+          done
+          which fsck.erofs && fsck.erofs --version 2>&1 | head -1 || echo "::warning::fsck.erofs 仍不可用"
 
       - name: 配置 ccache
         run: |
