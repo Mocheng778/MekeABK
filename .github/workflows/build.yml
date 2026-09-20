@@ -6752,68 +6752,48 @@ jobs:
                             print(f"[+] 无需修改(目录): {common_py}")
                         patched = True
                         break
-                elif os.path.isfile(bi_path) and zipfile.is_zipfile(bi_path):
-                    # zipapp：里面是 .pyc 字节码，无法直接改 common.pyc
-                    # 方案：修改 __main__.py（源码），在最前面加 subprocess 猴子补丁
-                    print(f"[+] build_image 是 zipapp: {bi_path}")
+                elif os.path.isfile(bi_path) and (zipfile.is_zipfile(bi_path) or os.access(bi_path, os.X_OK)):
+                    # zipapp/可执行文件：不修改原文件，改用 wrapper + sitecustomize 注入猴子补丁
+                    print(f"[+] build_image 是可执行文件/zipapp: {bi_path}")
                     try:
-                        with zipfile.ZipFile(bi_path, 'r') as zf:
-                            names = zf.namelist()
-                            main_name = '__main__.py'
-                            if main_name not in names:
-                                # 尝试找其他入口
-                                for n in names:
-                                    if n.endswith('__main__.py'):
-                                        main_name = n
-                                        break
-                            if main_name in names:
-                                main_content = zf.read(main_name).decode('utf-8', errors='replace')
-                                monkey_patch = "\n".join([
-                                    "import subprocess as _sp",
-                                    "_orig_run = _sp.run",
-                                    "_orig_popen = _sp.Popen",
-                                    "def _patched_run(*a, **kw):",
-                                    "    if (kw.get('text') or kw.get('universal_newlines')) and 'errors' not in kw:",
-                                    "        kw['errors'] = 'replace'",
-                                    "    return _orig_run(*a, **kw)",
-                                    "def _patched_popen(*a, **kw):",
-                                    "    if (kw.get('text') or kw.get('universal_newlines')) and 'errors' not in kw:",
-                                    "        kw['errors'] = 'replace'",
-                                    "    return _orig_popen(*a, **kw)",
-                                    "_sp.run = _patched_run",
-                                    "_sp.Popen = _patched_popen",
-                                    "",
-                                ])
-                                if '_patched_run' not in main_content:
-                                    new_main = monkey_patch + main_content
-                                    # 读取原始文件，保留 shebang 前缀（zipapp = shebang + zip）
-                                    with open(bi_path, 'rb') as f_raw:
-                                        raw_data = f_raw.read()
-                                    zip_magic = b'PK\x03\x04'
-                                    prefix = raw_data[:raw_data.find(zip_magic)] if zip_magic in raw_data else b''
-                                    # 写新 zip 到临时文件
-                                    tmp_zip = bi_path + '.tmp.zip'
-                                    with zipfile.ZipFile(tmp_zip, 'w', zipfile.ZIP_DEFLATED) as zf_out:
-                                        for item in zf.infolist():
-                                            if item.filename == main_name:
-                                                zf_out.writestr(item, new_main)
-                                            else:
-                                                zf_out.writestr(item, zf.read(item.filename))
-                                    # 拼接 shebang + 新 zip，写回原文件
-                                    with open(tmp_zip, 'rb') as f_tmp:
-                                        new_zip_data = f_tmp.read()
-                                    with open(bi_path, 'wb') as f_out:
-                                        f_out.write(prefix + new_zip_data)
-                                    os.remove(tmp_zip)
-                                    os.chmod(bi_path, 0o755)
-                                    print(f"[+] 已修补(zipapp __main__.py 猴子补丁, shebang保留): {bi_path}")
-                                else:
-                                    print(f"[+] 无需修改(zipapp 已有补丁): {bi_path}")
-                                patched = True
-                            else:
-                                print(f"[!] zipapp 中未找到 __main__.py，文件列表: {names[:10]}")
+                        real_path = bi_path + '.real'
+                        if not os.path.exists(real_path):
+                            shutil.copy2(bi_path, real_path)
+                        # 创建 sitecustomize.py（Python 启动时自动加载）
+                        hack_dir = '/tmp/build_image_hack'
+                        os.makedirs(hack_dir, exist_ok=True)
+                        sitecustomize = "\n".join([
+                            "import subprocess",
+                            "_orig_run = subprocess.run",
+                            "_orig_popen = subprocess.Popen",
+                            "def _patched_run(*a, **kw):",
+                            '    if (kw.get("text") or kw.get("universal_newlines")) and "errors" not in kw:',
+                            '        kw["errors"] = "replace"',
+                            "    return _orig_run(*a, **kw)",
+                            "def _patched_popen(*a, **kw):",
+                            '    if (kw.get("text") or kw.get("universal_newlines")) and "errors" not in kw:',
+                            '        kw["errors"] = "replace"',
+                            "    return _orig_popen(*a, **kw)",
+                            "subprocess.run = _patched_run",
+                            "subprocess.Popen = _patched_popen",
+                            "",
+                        ])
+                        with open(os.path.join(hack_dir, 'sitecustomize.py'), 'w') as f:
+                            f.write(sitecustomize)
+                        # 创建 wrapper 脚本
+                        wrapper = "\n".join([
+                            "#!/bin/bash",
+                            "export PYTHONPATH=/tmp/build_image_hack:${PYTHONPATH:-}",
+                            'exec "$0.real" "$@"',
+                            "",
+                        ])
+                        with open(bi_path, 'w') as f:
+                            f.write(wrapper)
+                        os.chmod(bi_path, 0o755)
+                        print(f"[+] 已创建 wrapper: {bi_path} -> {real_path} (sitecustomize 猴子补丁)")
+                        patched = True
                     except Exception as e:
-                        print(f"[!] 处理 zipapp 失败: {bi_path}: {e}")
+                        print(f"[!] 创建 wrapper 失败: {bi_path}: {e}")
                     if patched:
                         break
 
