@@ -6753,51 +6753,61 @@ jobs:
                         patched = True
                         break
                 elif os.path.isfile(bi_path) and zipfile.is_zipfile(bi_path):
-                    # zipapp：直接在内存中读取→修改→写回，避免解压路径安全问题
+                    # zipapp：里面是 .pyc 字节码，无法直接改 common.pyc
+                    # 方案：修改 __main__.py（源码），在最前面加 subprocess 猴子补丁
                     print(f"[+] build_image 是 zipapp: {bi_path}")
                     try:
                         with zipfile.ZipFile(bi_path, 'r') as zf:
                             names = zf.namelist()
-                            print(f"[debug] zipapp 内容({len(names)}): {names[:10]}")
-                            # 递归查找 common.py（可能在子目录）
-                            common_name = None
-                            for n in names:
-                                if n.endswith('common.py') and '/'.join(n.split('/')[-2:]) in ('common.py', 'build_image/common.py'):
-                                    common_name = n
-                                    break
-                            if not common_name:
+                            main_name = '__main__.py'
+                            if main_name not in names:
+                                # 尝试找其他入口
                                 for n in names:
-                                    if n.endswith('common.py'):
-                                        common_name = n
+                                    if n.endswith('__main__.py'):
+                                        main_name = n
                                         break
-                            if common_name:
-                                print(f"[+] zipapp 中找到 common.py: {common_name}")
-                                content = zf.read(common_name).decode('utf-8', errors='replace')
-                                new_content = patch_common_py(content)
-                                if new_content != content:
-                                    # 写新 zip：复制所有条目，替换 common.py
+                            if main_name in names:
+                                main_content = zf.read(main_name).decode('utf-8', errors='replace')
+                                monkey_patch = "\n".join([
+                                    "import subprocess as _sp",
+                                    "_orig_run = _sp.run",
+                                    "_orig_popen = _sp.Popen",
+                                    "def _patched_run(*a, **kw):",
+                                    "    if (kw.get('text') or kw.get('universal_newlines')) and 'errors' not in kw:",
+                                    "        kw['errors'] = 'replace'",
+                                    "    return _orig_run(*a, **kw)",
+                                    "def _patched_popen(*a, **kw):",
+                                    "    if (kw.get('text') or kw.get('universal_newlines')) and 'errors' not in kw:",
+                                    "        kw['errors'] = 'replace'",
+                                    "    return _orig_popen(*a, **kw)",
+                                    "_sp.run = _patched_run",
+                                    "_sp.Popen = _patched_popen",
+                                    "",
+                                ])
+                                if 'subprocess' not in main_content[:200]:
+                                    new_main = monkey_patch + main_content
                                     backup = bi_path + '.bak'
                                     shutil.copy2(bi_path, backup)
                                     with zipfile.ZipFile(bi_path, 'w', zipfile.ZIP_DEFLATED) as zf_out:
                                         for item in zf.infolist():
-                                            if item.filename == common_name:
-                                                zf_out.writestr(item, new_content)
+                                            if item.filename == main_name:
+                                                zf_out.writestr(item, new_main)
                                             else:
                                                 zf_out.writestr(item, zf.read(item.filename))
                                     os.remove(backup)
-                                    print(f"[+] 已修补(zipapp): {bi_path}")
+                                    print(f"[+] 已修补(zipapp __main__.py 猴子补丁): {bi_path}")
                                 else:
-                                    print(f"[+] 无需修改(zipapp): {bi_path}")
+                                    print(f"[+] 无需修改(zipapp 已有补丁): {bi_path}")
                                 patched = True
                             else:
-                                print(f"[!] zipapp 中未找到 common.py，文件列表: {names}")
+                                print(f"[!] zipapp 中未找到 __main__.py，文件列表: {names[:10]}")
                     except Exception as e:
                         print(f"[!] 处理 zipapp 失败: {bi_path}: {e}")
                     if patched:
                         break
 
             if not patched:
-                print("::warning::未找到可修补的 build_image/common.py")
+                print("::warning::未找到可修补的 build_image（common.py 或 zipapp __main__.py）")
                 print(f"[debug] 搜索到的 build_image 候选: {candidates}")
             PYEOF
               set -e
