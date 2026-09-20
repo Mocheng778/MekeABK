@@ -1978,7 +1978,7 @@ jobs:
               return 1
             fi
 
-            patch -p1 < "$patch_source" || true
+            patch -p1 -F 3 < "$patch_source" || true
             return 0
           }
 
@@ -2050,7 +2050,7 @@ jobs:
           esac
 
           cd $KERNEL_ROOT/common
-          patch -p1 < "50_add_susfs_in_gki-${ABK_ANDROID_VERSION}-${ABK_KERNEL_VERSION}.patch" || true
+          patch -p1 -F 3 < "50_add_susfs_in_gki-${ABK_ANDROID_VERSION}-${ABK_KERNEL_VERSION}.patch" || true
 
           if [ "$ABK_KSU_VARIANT" == "SukiSU" ] || [ "$ABK_KSU_VARIANT" == "ReSukiSU" ] || [ "$ABK_KSU_VARIANT" == "ApkeSU" ]; then
             SUSFS_C="./fs/susfs.c"
