@@ -638,7 +638,7 @@ jobs:
 
           disable_broken_chrome_source
           apt_update_retry
-          sudo apt-get install -y ccache python3 git curl build-essential libssl-dev bison flex libelf-dev dwarves
+          sudo apt-get install -y ccache python3 git curl build-essential libssl-dev bison flex libelf-dev dwarves erofs-utils
 
       - name: 配置 ccache
         run: |
