@@ -6784,18 +6784,29 @@ jobs:
                                     "_sp.Popen = _patched_popen",
                                     "",
                                 ])
-                                if 'subprocess' not in main_content[:200]:
+                                if '_patched_run' not in main_content:
                                     new_main = monkey_patch + main_content
-                                    backup = bi_path + '.bak'
-                                    shutil.copy2(bi_path, backup)
-                                    with zipfile.ZipFile(bi_path, 'w', zipfile.ZIP_DEFLATED) as zf_out:
+                                    # 读取原始文件，保留 shebang 前缀（zipapp = shebang + zip）
+                                    with open(bi_path, 'rb') as f_raw:
+                                        raw_data = f_raw.read()
+                                    zip_magic = b'PK\x03\x04'
+                                    prefix = raw_data[:raw_data.find(zip_magic)] if zip_magic in raw_data else b''
+                                    # 写新 zip 到临时文件
+                                    tmp_zip = bi_path + '.tmp.zip'
+                                    with zipfile.ZipFile(tmp_zip, 'w', zipfile.ZIP_DEFLATED) as zf_out:
                                         for item in zf.infolist():
                                             if item.filename == main_name:
                                                 zf_out.writestr(item, new_main)
                                             else:
                                                 zf_out.writestr(item, zf.read(item.filename))
-                                    os.remove(backup)
-                                    print(f"[+] 已修补(zipapp __main__.py 猴子补丁): {bi_path}")
+                                    # 拼接 shebang + 新 zip，写回原文件
+                                    with open(tmp_zip, 'rb') as f_tmp:
+                                        new_zip_data = f_tmp.read()
+                                    with open(bi_path, 'wb') as f_out:
+                                        f_out.write(prefix + new_zip_data)
+                                    os.remove(tmp_zip)
+                                    os.chmod(bi_path, 0o755)
+                                    print(f"[+] 已修补(zipapp __main__.py 猴子补丁, shebang保留): {bi_path}")
                                 else:
                                     print(f"[+] 无需修改(zipapp 已有补丁): {bi_path}")
                                 patched = True
