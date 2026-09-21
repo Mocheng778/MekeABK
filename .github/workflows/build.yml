@@ -1426,25 +1426,13 @@ jobs:
               KSU_VERSION=$((30000 + KSU_GIT_VERSION))
               echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
 
-              # 从 ApkeSU 最新 Release 的 APK 文件名提取 versionCode（如 ApkeSU_3.2.8_32800-release.apk → 32800）
-              APKESU_APK_NAME=$(curl -fsSL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-                "https://api.github.com/repos/fixz232/ApkeSU/releases/latest" | jq -r ".assets[].name" | grep -E '\.apk$' | head -1)
-              if [ -n "$APKESU_APK_NAME" ] && [ "$APKESU_APK_NAME" != "null" ]; then
-                RELEASE_VERSION=$(echo "$APKESU_APK_NAME" | grep -oE '_[0-9]+-' | tr -d '_-')
-                if [ -n "$RELEASE_VERSION" ] && [ "$RELEASE_VERSION" -gt 30000 ] 2>/dev/null; then
-                  echo "[+] ApkeSU APK 版本: $RELEASE_VERSION（git 计算: $KSU_VERSION），使用 APK 版本匹配 manager"
-                  KSU_VERSION="$RELEASE_VERSION"
-                  KSU_VERSION_OVERRIDE="$RELEASE_VERSION"
-                  echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
-                else
-                  echo "[!] 无法解析 ApkeSU APK 版本 ($APKESU_APK_NAME)，使用 git 计算版本: $KSU_VERSION"
-                  KSU_VERSION_OVERRIDE="$KSU_VERSION"
-                fi
-              else
-                echo "[!] 未获取到 ApkeSU Release，使用 git 计算版本: $KSU_VERSION"
-                KSU_VERSION_OVERRIDE="$KSU_VERSION"
-              fi
+              # ApkeSU 驱动版本固定为 32800，与管理器 3.2.8 版本一致
+              # （之前尝试从 fixz232/ApkeSU Release API 获取，但 GITHUB_TOKEN 无外部仓库权限，总是回退到 git 计算版本）
+              KSU_VERSION=32800
+              KSU_VERSION_OVERRIDE=32800
+              echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
               echo "KSU_VERSION_OVERRIDE=$KSU_VERSION_OVERRIDE" >> $GITHUB_ENV
+              echo "[+] ApkeSU 驱动版本固定为: $KSU_VERSION（匹配管理器 3.2.8）"
 
               # ===== 下载 ApkeSU 预编译 ko 模块（仅在未启用 SUSFS 时使用）=====
               if [ "${{ inputs.enable_susfs }}" != "true" ]; then
