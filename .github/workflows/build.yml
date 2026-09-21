@@ -1428,11 +1428,14 @@ jobs:
 
               # ApkeSU 驱动版本固定为 32800，与管理器 3.2.8 版本一致
               # （之前尝试从 fixz232/ApkeSU Release API 获取，但 GITHUB_TOKEN 无外部仓库权限，总是回退到 git 计算版本）
+              # （KSU_VERSION_OVERRIDE 环境变量无法传入 bazel 沙箱，所以直接写 version.properties 文件最可靠）
               KSU_VERSION=32800
               KSU_VERSION_OVERRIDE=32800
               echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
               echo "KSU_VERSION_OVERRIDE=$KSU_VERSION_OVERRIDE" >> $GITHUB_ENV
-              echo "[+] ApkeSU 驱动版本固定为: $KSU_VERSION（匹配管理器 3.2.8）"
+              # 直接写 version.properties，Kbuild 会优先读这个文件（$(MDIR)/../version.properties）
+              printf 'versionCode=32800\nversionName=3.2.8\n' > version.properties
+              echo "[+] ApkeSU 驱动版本固定为: $KSU_VERSION（匹配管理器 3.2.8），version.properties 已写入"
 
               # ===== 下载 ApkeSU 预编译 ko 模块（仅在未启用 SUSFS 时使用）=====
               if [ "${{ inputs.enable_susfs }}" != "true" ]; then
