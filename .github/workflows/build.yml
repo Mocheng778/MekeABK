@@ -1363,7 +1363,8 @@ jobs:
               ;;
             "SterSU")
               echo "添加 SterSU..."
-              curl -LSs "https://raw.githubusercontent.com/Mocheng778/SterSU/main/kernel/setup.sh" | bash -s main
+              # setup.sh 内部默认克隆 fixz232/ApkeSU（已删），必须用 APKESU_REPO 覆盖为 SterSU 仓库
+              curl -LSs "https://raw.githubusercontent.com/Mocheng778/SterSU/main/kernel/setup.sh" | APKESU_REPO=https://github.com/Mocheng778/SterSU.git bash -s main
 
               # ===== 强制同步 + 直接覆盖 sucompat 源文件（保证新版 API 一致）=====
               cd KernelSU
