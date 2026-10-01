@@ -16,7 +16,7 @@ on:
           - Official
           - SukiSU
           - ReSukiSU
-          - ApkeSU
+          - SterSU
         default: ReSukiSU
       kernelsu_branch:
         description: "KSU 分支"

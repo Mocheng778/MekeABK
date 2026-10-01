@@ -185,14 +185,14 @@ GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 OFFICIAL_STABLE_REF="e6832ed548ada2fa16fcbd6c8e98bbd1868f4401"
 SUKISU_STABLE_REF="278d822a4ebd214bcfd774b7910cb11cdc560bb9"
 RESUKISU_STABLE_REF="2206a7dd71e600f34378c4c583244f46e7a35670"
-APKESU_STABLE_REF="7d214284ddde469c6072945e8461e78633ec42a2"
+APKESU_STABLE_REF="main"
 
 OFFICIAL_DEV_REF="32e5ceb668e42348cd23e13fa4c28d60de29a4b5"
 SUKISU_DEV_REF="2af38be538502e43111d20f74b74dc160320cdbf"
 RESUKISU_DEV_REF="b44a2f881a0cfad6841dfee76db3aa6d20bdab16"
-APKESU_DEV_REF="7d214284ddde469c6072945e8461e78633ec42a2"
+APKESU_DEV_REF="main"
 SUKISU_REPO="SukiSU-Ultra/SukiSU-Ultra"
-APKESU_REPO="fixz232/ApkeSU"
+APKESU_REPO="Mocheng778/SterSU"
 
 emit_env() {
   local key="$1"
@@ -247,10 +247,10 @@ resolve_latest() {
       repo="ReSukiSU/ReSukiSU"
       source_branch="main"
       ;;
-    ApkeSU)
-      repo="fixz232/ApkeSU"
-      # ApkeSU repo's default branch is "ApkeSU" (no main/master).
-      source_branch="ApkeSU"
+    SterSU)
+      repo="Mocheng778/SterSU"
+      # SterSU repo default branch is "main".
+      source_branch="main"
       ;;
     *)
       echo "::error::Unknown KSU variant for Latest: ${KSU_VARIANT}" >&2
@@ -289,14 +289,14 @@ if [ "$KSU_BRANCH" = "Custom(自定义)" ]; then
       Official) OFFICIAL_CUSTOM_REF="$(get_success_action_sha "tiann/KernelSU" "$branch" "$nabe")" ;;
       SukiSU) SUKISU_CUSTOM_REF="$(get_success_action_sha "$SUKISU_REPO" "$branch" "$nabe")" ;;
       ReSukiSU) RESUKISU_CUSTOM_REF="$(get_success_action_sha "ReSukiSU/ReSukiSU" "$branch" "$nabe")" ;;
-      ApkeSU) APKESU_CUSTOM_REF="$(get_success_action_sha "fixz232/ApkeSU" "$branch" "$nabe")" ;;
+      SterSU) APKESU_CUSTOM_REF="$(get_success_action_sha "Mocheng778/SterSU" "$branch" "$nabe")" ;;
     esac
   else
     case "$KSU_VARIANT" in
       Official) check_ref "tiann/KernelSU" "$CUSTOM_REF" ;;
       SukiSU) check_ref "$SUKISU_REPO" "$CUSTOM_REF" ;;
       ReSukiSU) check_ref "ReSukiSU/ReSukiSU" "$CUSTOM_REF" ;;
-      ApkeSU) check_ref "fixz232/ApkeSU" "$CUSTOM_REF" ;;
+      SterSU) check_ref "Mocheng778/SterSU" "$CUSTOM_REF" ;;
     esac
     OFFICIAL_CUSTOM_REF="$CUSTOM_REF"
     SUKISU_CUSTOM_REF="$CUSTOM_REF"
@@ -350,9 +350,9 @@ case "$KSU_VARIANT" in
     BRANCH="${RESUKISU_REF}"
     RESOLVED_KSU_REPO="${RESOLVED_KSU_REPO:-ReSukiSU/ReSukiSU}"
     ;;
-  ApkeSU)
+  SterSU)
     BRANCH="${APKESU_REF}"
-    RESOLVED_KSU_REPO="${RESOLVED_KSU_REPO:-fixz232/ApkeSU}"
+    RESOLVED_KSU_REPO="${RESOLVED_KSU_REPO:-Mocheng778/SterSU}"
     ;;
   *)
     echo "::error::Unknown KSU variant: ${KSU_VARIANT}" >&2

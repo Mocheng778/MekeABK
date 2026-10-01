@@ -95,11 +95,11 @@ jobs:
           elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU" ]; then
             echo "This is the ReSukiSU variant"
             git clone https://github.com/ReSukiSU/ReSukiSU.git KernelSU
-          elif [ "${{ inputs.kernelsu_variant }}" == "ApkeSU" ]; then
-            echo "This is the ApkeSU variant"
-            git clone https://github.com/fixz232/ApkeSU.git KernelSU
+          elif [ "${{ inputs.kernelsu_variant }}" == "SterSU" ]; then
+            echo "This is the SterSU variant"
+            git clone https://github.com/Mocheng778/SterSU.git KernelSU
             cd KernelSU
-            git checkout ApkeSU
+            git checkout main
             cd ..
           elif [ "${{ inputs.kernelsu_variant }}" == "Official" ]; then
             echo "This is the Official"
@@ -124,16 +124,16 @@ jobs:
             KSU_VERSION=$((30700 + KSU_GIT_VERSION))
           elif [ "${{ inputs.kernelsu_variant }}" == "Official" ]; then
             KSU_VERSION=$((30000 + KSU_GIT_VERSION))
-          elif [ "${{ inputs.kernelsu_variant }}" == "ApkeSU" ]; then
+          elif [ "${{ inputs.kernelsu_variant }}" == "SterSU" ]; then
             KSU_VERSION=$((30000 + KSU_GIT_VERSION))
-            # ApkeSU manager 从 Release 下载，版本号在 APK 文件名中（如 ApkeSU_3.2.8_32800-release.apk）
+            # SterSU manager 从 Release 下载，版本号在 APK 文件名中（如 SterSU_3.3.0_33000-release.apk）
             # 从 Release assets 中提取 versionCode，确保与内核驱动版本一致
             APKESU_TAG=$(curl -fsSL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              "https://api.github.com/repos/fixz232/ApkeSU/releases/latest" | jq -r ".assets[].name" | grep -E '\.apk$' | head -1)
+              "https://api.github.com/repos/Mocheng778/SterSU/releases/latest" | jq -r ".assets[].name" | grep -E '\.apk$' | head -1)
             if [ -n "$APKESU_TAG" ] && [ "$APKESU_TAG" != "null" ]; then
               APKESU_VER=$(echo "$APKESU_TAG" | grep -oE '_[0-9]+-' | tr -d '_-')
               if [ -n "$APKESU_VER" ] && [ "$APKESU_VER" -gt 30000 ] 2>/dev/null; then
-                echo "[+] ApkeSU APK 版本: $APKESU_VER（git 计算: $KSU_VERSION），使用 APK 版本"
+                echo "[+] SterSU APK 版本: $APKESU_VER（git 计算: $KSU_VERSION），使用 APK 版本"
                 KSU_VERSION="$APKESU_VER"
               fi
             fi
@@ -234,19 +234,19 @@ jobs:
               # ReSukiSU has no release APKs; Actions build-manager (fallback to main latest in script).
               download_manager_for_repo "ReSukiSU/ReSukiSU" "ReSukiSU"
               ;;
-            "ApkeSU")
-              # ApkeSU - 从最新 Release 下载（ApkeSU 仓库无 Actions build-manager 产物）
+            "SterSU")
+              # SterSU - 从最新 Release 下载（SterSU 仓库无 Actions build-manager 产物）
               # 内核驱动版本会在 build.yml 中通过 KSU_VERSION_OVERRIDE 匹配此 Release 版本
-              echo "从 ApkeSU 最新 Release 下载 Manager APK..."
+              echo "从 SterSU 最新 Release 下载 Manager APK..."
               LATEST_TAG=$(curl -fsSL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-                "https://api.github.com/repos/fixz232/ApkeSU/releases/latest" | jq -r ".tag_name")
+                "https://api.github.com/repos/Mocheng778/SterSU/releases/latest" | jq -r ".tag_name")
               if [ -n "$LATEST_TAG" ] && [ "$LATEST_TAG" != "null" ]; then
-                download_tag_release_apk "fixz232/ApkeSU" "$LATEST_TAG" "ApkeSU" || {
+                download_tag_release_apk "Mocheng778/SterSU" "$LATEST_TAG" "SterSU" || {
                   echo "::warning::从 Release 下载失败，尝试从 Actions 产物下载..."
-                  download_manager_for_repo "fixz232/ApkeSU" "ApkeSU"
+                  download_manager_for_repo "Mocheng778/SterSU" "SterSU"
                 }
               else
-                download_manager_for_repo "fixz232/ApkeSU" "ApkeSU"
+                download_manager_for_repo "Mocheng778/SterSU" "SterSU"
               fi
               ;;
             *)

@@ -15,7 +15,7 @@ source "${SCRIPT_DIR}/resolve-ksu-ref.sh"
 nightly_artifact_zip() {
   case "$REPO" in
     ReSukiSU/ReSukiSU) printf '%s\n' "Manager-release.zip" ;;
-    tiann/KernelSU | SukiSU-Ultra/SukiSU-Ultra | fixz232/ApkeSU) printf '%s\n' "manager.zip" ;;
+    tiann/KernelSU | SukiSU-Ultra/SukiSU-Ultra | Mocheng778/SterSU) printf '%s\n' "manager.zip" ;;
     *)
       echo "::error::Unknown repo for nightly.link manager download: ${REPO}" >&2
       exit 1
@@ -89,10 +89,10 @@ try_download_nightly_run() {
   echo "Downloaded manager from ${REPO}@${KSU_SHA} (run ${run_id}, source ${MANAGER_RUN_SOURCE}) via nightly.link"
 }
 
-# Detect default branch for fallback (ApkeSU uses 'ApkeSU', not main/master).
+# Detect default branch for fallback (SterSU default branch is 'main').
 FALLBACK_EXTRA=""
-if [ "$REPO" = "fixz232/ApkeSU" ]; then
-  FALLBACK_EXTRA="ApkeSU"
+if [ "$REPO" = "Mocheng778/SterSU" ]; then
+  FALLBACK_EXTRA="main"
 fi
 MANAGER_FALLBACK_BRANCH="$(ksu_detect_default_branch "$REPO" "$FALLBACK_EXTRA" 2>/dev/null || echo main)"
 

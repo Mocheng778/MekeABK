@@ -1230,7 +1230,7 @@ jobs:
             --feature "rekernel=$USE_REKERNEL"
           mkdir -p "$transaction_dir"
           if [ "$USE_KPM" = "true" ] &&
-            { [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "ReSukiSU" ] && [ "$KSU_VARIANT" != "ApkeSU" ]; }; then
+            { [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "ReSukiSU" ] && [ "$KSU_VARIANT" != "SterSU" ]; }; then
             python3 "$GITHUB_WORKSPACE/.github/scripts/custom-source-feature-status.py" mark \
               --file "$status_file" \
               --id kpm \
@@ -1361,25 +1361,25 @@ jobs:
               echo "添加 ReSukiSU..."
               curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s "$BRANCH"
               ;;
-            "ApkeSU")
-              echo "添加 ApkeSU..."
-              curl -LSs "https://raw.githubusercontent.com/fixz232/ApkeSU/ApkeSU/kernel/setup.sh" | bash -s ApkeSU
+            "SterSU")
+              echo "添加 SterSU..."
+              curl -LSs "https://raw.githubusercontent.com/Mocheng778/SterSU/main/kernel/setup.sh" | bash -s main
 
               # ===== 强制同步 + 直接覆盖 sucompat 源文件（保证新版 API 一致）=====
               cd KernelSU
-              git fetch origin ApkeSU --tags --prune
-              git reset --hard origin/ApkeSU
+              git fetch origin main --tags --prune
+              git reset --hard origin/main
               APKESU_HEAD="$(git rev-parse --short=12 HEAD)"
-              echo "[+] ApkeSU 已同步到: ${APKESU_HEAD}"
-              APKESU_RAW="https://raw.githubusercontent.com/fixz232/ApkeSU/ApkeSU/kernel/feature"
+              echo "[+] SterSU 已同步到: ${APKESU_HEAD}"
+              APKESU_RAW="https://raw.githubusercontent.com/Mocheng778/SterSU/main/kernel/feature"
               curl -fsSL "${APKESU_RAW}/sucompat.h" -o kernel/feature/sucompat.h || { echo "::error::下载 sucompat.h 失败"; exit 1; }
               curl -fsSL "${APKESU_RAW}/sucompat.c" -o kernel/feature/sucompat.c || { echo "::error::下载 sucompat.c 失败"; exit 1; }
-              echo "[+] sucompat.h/c 已从上游 ApkeSU 分支直接覆盖"
+              echo "[+] sucompat.h/c 已从上游 SterSU 分支直接覆盖"
               cd ..
               # ===== 强制同步结束 =====
 
-              # ===== 修复 ApkeSU uapi 头文件 symlink 解析问题 =====
-              # ApkeSU 的 kernel/include/uapi 是指向 ../../uapi 的 git symlink，
+              # ===== 修复 SterSU uapi 头文件 symlink 解析问题 =====
+              # SterSU 的 kernel/include/uapi 是指向 ../../uapi 的 git symlink，
               # 嵌套 symlink 在内核构建中可能无法正确解析，替换为真实文件
               if [ -d "KernelSU/uapi" ]; then
                 rm -rf KernelSU/kernel/include/uapi
@@ -1389,13 +1389,13 @@ jobs:
                 rm -rf KernelSU/kernel/uapi
                 mkdir -p KernelSU/kernel/uapi
                 cp -rf KernelSU/uapi/* KernelSU/kernel/uapi/
-                echo "[+] ApkeSU uapi 目录已复制到 kernel/include/uapi/ 和 kernel/uapi/"
+                echo "[+] SterSU uapi 目录已复制到 kernel/include/uapi/ 和 kernel/uapi/"
               else
                 echo "::warning::KernelSU/uapi 目录不存在，跳过 uapi 头文件修复"
               fi
               # ===== 修复结束 =====
 
-              # ===== 修复 ApkeSU include/ 头文件跨内核版本找不到 =====
+              # ===== 修复 SterSU include/ 头文件跨内核版本找不到 =====
               # 部分内核版本（如 android14-6.1-84）上 -I$(KSU_KERNEL_DIR)/include 二级路径
               # 解析失败，而 -I$(KSU_KERNEL_DIR)（kernel/ 根）可用。把 include/ 下所有内容
               # （文件+子目录，uapi 除外已单独处理）递归复制到 kernel/ 根，一次性全覆盖。
@@ -1416,38 +1416,38 @@ jobs:
                   cp -f "$_abk_h" KernelSU/kernel/feature/
                   cp -f "$_abk_h" KernelSU/kernel/hook/
                 done
-                echo "[+] ApkeSU include/ 全部内容已递归复制到 kernel/ 根（含所有子目录）"
+                echo "[+] SterSU include/ 全部内容已递归复制到 kernel/ 根（含所有子目录）"
               fi
               unset _abk_dir _dir_name _abk_h
-              # ===== ApkeSU include/ 头文件修复结束 =====
+              # ===== SterSU include/ 头文件修复结束 =====
 
               cd KernelSU
               KSU_GIT_VERSION=$(git rev-list --count HEAD)
               KSU_VERSION=$((30000 + KSU_GIT_VERSION))
               echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
 
-              # ApkeSU 驱动版本固定为 32800，与管理器 3.2.8 版本一致
-              # （之前尝试从 fixz232/ApkeSU Release API 获取，但 GITHUB_TOKEN 无外部仓库权限，总是回退到 git 计算版本）
+              # SterSU 驱动版本固定为 33000，与管理器 3.3.0 版本一致
+              # （之前尝试从 Mocheng778/SterSU Release API 获取，但 GITHUB_TOKEN 无外部仓库权限，总是回退到 git 计算版本）
               # （KSU_VERSION_OVERRIDE 环境变量无法传入 bazel 沙箱，所以直接写 version.properties 文件最可靠）
-              KSU_VERSION=32800
-              KSU_VERSION_OVERRIDE=32800
+              KSU_VERSION=33000
+              KSU_VERSION_OVERRIDE=33000
               echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
               echo "KSU_VERSION_OVERRIDE=$KSU_VERSION_OVERRIDE" >> $GITHUB_ENV
               # 直接写 version.properties，Kbuild 会优先读这个文件（$(MDIR)/../version.properties）
-              printf 'versionCode=32800\nversionName=3.2.8\n' > version.properties
-              echo "[+] ApkeSU 驱动版本固定为: $KSU_VERSION（匹配管理器 3.2.8），version.properties 已写入"
+              printf 'versionCode=33000\nversionName=3.3.0\n' > version.properties
+              echo "[+] SterSU 驱动版本固定为: $KSU_VERSION（匹配管理器 3.3.0），version.properties 已写入"
 
-              # ===== 下载 ApkeSU 预编译 ko 模块（仅在未启用 SUSFS 时使用）=====
+              # ===== 下载 SterSU 预编译 ko 模块（仅在未启用 SUSFS 时使用）=====
               if [ "${{ inputs.enable_susfs }}" != "true" ]; then
                 mkdir -p prebuilt
                 ANDROID_VERSION="${{ inputs.android_version }}"
                 KERNEL_VERSION="${{ inputs.kernel_version }}"
-                APKESU_KO_BASE="https://raw.githubusercontent.com/fixz232/ApkeSU/ApkeSU/userspace/ksud/bin/aarch64"
+                APKESU_KO_BASE="https://raw.githubusercontent.com/Mocheng778/SterSU/main/userspace/ksud/bin/aarch64"
                 KO_KERNEL_NAME="${ANDROID_VERSION}-${KERNEL_VERSION}_kernelsu.ko"
                 KO_PATHMASK_NAME="${ANDROID_VERSION}-${KERNEL_VERSION}_pathmask.ko"
-                echo "[+] 下载 ApkeSU ko: ${KO_KERNEL_NAME}"
+                echo "[+] 下载 SterSU ko: ${KO_KERNEL_NAME}"
                 curl -fsSL "${APKESU_KO_BASE}/${KO_KERNEL_NAME}" -o "prebuilt/kernelsu.ko" || echo "::warning::kernelsu.ko 下载失败，将尝试从源码编译"
-                echo "[+] 下载 ApkeSU ko: ${KO_PATHMASK_NAME}"
+                echo "[+] 下载 SterSU ko: ${KO_PATHMASK_NAME}"
                 curl -fsSL "${APKESU_KO_BASE}/${KO_PATHMASK_NAME}" -o "prebuilt/pathmask.ko" || echo "::warning::pathmask.ko 下载失败"
                 ls -la prebuilt/ 2>/dev/null || true
               else
@@ -1467,9 +1467,9 @@ jobs:
 
       - name: 修复 SukiSU 家族 SUSFS 源码兼容
         if: inputs.ksu_variant == 'ReSukiSU' && inputs.enable_susfs
-        # 注：ApkeSU 不运行本步骤 —— 本步骤要求 KernelSU/kernel/ksu.c 存在（static key 注入锚点），
-        # ApkeSU 无 ksu.c 且 selinux_hide 去 static / selinux.c 域块由
-        # "桥接 ApkeSU SUSFS 符号"步骤完成，此处无需重复处理。
+        # 注：SterSU 不运行本步骤 —— 本步骤要求 KernelSU/kernel/ksu.c 存在（static key 注入锚点），
+        # SterSU 无 ksu.c 且 selinux_hide 去 static / selinux.c 域块由
+        # "桥接 SterSU SUSFS 符号"步骤完成，此处无需重复处理。
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: susfs
@@ -1818,7 +1818,7 @@ jobs:
           PY
 
       - name: 确保 KernelSU SUSFS ABI 兼容
-        if: (inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU') && inputs.enable_susfs
+        if: (inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'SterSU') && inputs.enable_susfs
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           set -euo pipefail
@@ -1834,7 +1834,7 @@ jobs:
             exit 0
           fi
           echo "KernelSU 树: $KSU_DIR"
-          echo "SUSFS ABI 兼容由后续步骤保证：ReSukiSU 走『修复 SukiSU 家族 SUSFS 源码兼容』，ApkeSU 走『桥接 ApkeSU SUSFS 符号』与『修复 50_add 内核插桩 ApkeSU 兼容』。"
+          echo "SUSFS ABI 兼容由后续步骤保证：ReSukiSU 走『修复 SukiSU 家族 SUSFS 源码兼容』，SterSU 走『桥接 SterSU SUSFS 符号』与『修复 50_add 内核插桩 SterSU 兼容』。"
 
       - name: 配置 SukiSU 管理器信息
         if: inputs.ksu_variant == 'SukiSU'
@@ -2041,20 +2041,20 @@ jobs:
             "SukiSU")
               echo "SukiSU 使用单独步骤注入 SUSFS Kconfig 符号"
               ;;
-            "ApkeSU")
-              # ApkeSU 结构与 KernelSU 官方差异大（init.c/sucompat.c/setuid_hook.c 均不同），
+            "SterSU")
+              # SterSU 结构与 KernelSU 官方差异大（init.c/sucompat.c/setuid_hook.c 均不同），
               # 10_enable_susfs_for_ksu.patch 的 20 个文件 hunk 必然大面积不匹配，
               # 打上去只会产生 .rej 并触发回滚（补丁内容最终被完全撤销）。
-              # KernelSU 侧的 SUSFS 集成由后续"桥接 ApkeSU SUSFS 符号"步骤 +
+              # KernelSU 侧的 SUSFS 集成由后续"桥接 SterSU SUSFS 符号"步骤 +
               # fix_sukisu_susfs.py 的 modern sucompat 兼容处理补齐，效果等价且无副作用。
-              echo "ApkeSU 跳过 KernelSU 官方 10_enable 补丁（结构不匹配），SUSFS KernelSU 侧集成由桥接步骤补齐"
+              echo "SterSU 跳过 KernelSU 官方 10_enable 补丁（结构不匹配），SUSFS KernelSU 侧集成由桥接步骤补齐"
               ;;
           esac
 
           cd $KERNEL_ROOT/common
           patch -p1 -F 3 < "50_add_susfs_in_gki-${ABK_ANDROID_VERSION}-${ABK_KERNEL_VERSION}.patch" || true
 
-          if [ "$ABK_KSU_VARIANT" == "SukiSU" ] || [ "$ABK_KSU_VARIANT" == "ReSukiSU" ] || [ "$ABK_KSU_VARIANT" == "ApkeSU" ]; then
+          if [ "$ABK_KSU_VARIANT" == "SukiSU" ] || [ "$ABK_KSU_VARIANT" == "ReSukiSU" ] || [ "$ABK_KSU_VARIANT" == "SterSU" ]; then
             SUSFS_C="./fs/susfs.c"
             if [ -f "$SUSFS_C" ] && grep -q '^static void susfs_run_sus_path_loop(' "$SUSFS_C"; then
               sed -i 's/^static void susfs_run_sus_path_loop(/void susfs_run_sus_path_loop(/' "$SUSFS_C"
@@ -2062,7 +2062,7 @@ jobs:
             fi
           fi
 
-          if [ "$ABK_KSU_VARIANT" == "Official" ] || [ "$ABK_KSU_VARIANT" == "SukiSU" ] || [ "$ABK_KSU_VARIANT" == "ReSukiSU" ] || [ "$ABK_KSU_VARIANT" == "ApkeSU" ]; then
+          if [ "$ABK_KSU_VARIANT" == "Official" ] || [ "$ABK_KSU_VARIANT" == "SukiSU" ] || [ "$ABK_KSU_VARIANT" == "ReSukiSU" ] || [ "$ABK_KSU_VARIANT" == "SterSU" ]; then
             CURRENT_SUB="$ABK_SUB_LEVEL"
             if [[ ! "$CURRENT_SUB" =~ ^[0-9]+$ ]]; then
               CURRENT_SUB=99999
@@ -2668,13 +2668,13 @@ jobs:
           print("SUSFS Kconfig 与核心链接契约校验通过")
           PY
 
-      - name: 桥接 ApkeSU SUSFS 符号
+      - name: 桥接 SterSU SUSFS 符号
         if: false # 上游新版 Kbuild 已内置 SUSFS 变体文件（sucompat_susfs.o 等），不再需要手动桥接
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: susfs
           ABK_FEATURE_END: "true"
-          ABK_FEATURE_FAILURE_MESSAGE: "ApkeSU SUSFS symbol bridge failed"
+          ABK_FEATURE_FAILURE_MESSAGE: "SterSU SUSFS symbol bridge failed"
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           set -euo pipefail
@@ -2686,10 +2686,10 @@ jobs:
             fi
           done
           if [ -z "$KSU_DIR" ]; then
-            echo "::error::未找到 ApkeSU KernelSU 目录"
+            echo "::error::未找到 SterSU KernelSU 目录"
             exit 1
           fi
-          echo "ApkeSU KernelSU 目录: $KSU_DIR"
+          echo "SterSU KernelSU 目录: $KSU_DIR"
           python3 - "$KSU_DIR" <<'PY'
           from pathlib import Path
           import re
@@ -2740,7 +2740,7 @@ jobs:
               text = selinux_c.read_text()
               if "susfs_ksu_sid" not in text:
                   block = r'''
-          /* ABK/ApkeSU: SUSFS symbol bridge — sid storage + domain helpers */
+          /* ABK/SterSU: SUSFS symbol bridge — sid storage + domain helpers */
           #ifndef KERNEL_INIT_DOMAIN
           #define KERNEL_INIT_DOMAIN "u:r:init:s0"
           #endif
@@ -2834,9 +2834,9 @@ jobs:
           compat = ksu / "hook/ksu_susfs_compat.c"
           if not compat.exists():
               compat.write_text('''
-          // ABK/ApkeSU: SUSFS 符号桥接适配层 — KernelSU 官方 syscall hook API / static_key 兜底实现
-          // ApkeSU 通过自身 kprobe/syscall-bridge 处理 su 语义；本层仅保证 50_add 内核插桩
-          // 能链接并安全返回"非 su 会话"，避免与 ApkeSU 自身机制重复处理。
+          // ABK/SterSU: SUSFS 符号桥接适配层 — KernelSU 官方 syscall hook API / static_key 兜底实现
+          // SterSU 通过自身 kprobe/syscall-bridge 处理 su 语义；本层仅保证 50_add 内核插桩
+          // 能链接并安全返回"非 su 会话"，避免与 SterSU 自身机制重复处理。
           #include <linux/fs.h>
           #include <linux/sched.h>
           #include <linux/cred.h>
@@ -2851,7 +2851,7 @@ jobs:
           DEFINE_STATIC_KEY_FALSE(ksu_is_input_hook_enabled);
           DEFINE_STATIC_KEY_FALSE(ksu_is_init_rc_hook_enabled);
 
-          /* ApkeSU 用 reboot kprobe 安装 supercall fd；本函数只处理 SUSFS 命令通道 */
+          /* SterSU 用 reboot kprobe 安装 supercall fd；本函数只处理 SUSFS 命令通道 */
           #ifndef KSU_INSTALL_MAGIC1
           #define KSU_INSTALL_MAGIC1 0xDEADBEEF
           #endif
@@ -2962,7 +2962,7 @@ jobs:
               }
           #endif
               /* 非 SUSFS 命令（含 KSU_INSTALL_MAGIC2 supercall）交还原生 reboot 流程，
-               * ApkeSU 的 reboot kprobe 会自行完成 fd 安装。 */
+               * SterSU 的 reboot kprobe 会自行完成 fd 安装。 */
               return -EINVAL;
           }
 
@@ -3003,13 +3003,13 @@ jobs:
           print("桥接完成: " + ", ".join(changed) if changed else "桥接完成: 无需修改")
           PY
 
-      - name: 修复 50_add 内核插桩 ApkeSU 兼容
+      - name: 修复 50_add 内核插桩 SterSU 兼容
         if: false # 上游新版 Kbuild 已内置 SUSFS 变体，不再需要手动注入 ksu_susfs_compat.o
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: susfs
           ABK_FEATURE_END: "true"
-          ABK_FEATURE_FAILURE_MESSAGE: "ApkeSU 50_add instrumentation fix failed"
+          ABK_FEATURE_FAILURE_MESSAGE: "SterSU 50_add instrumentation fix failed"
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           set -euo pipefail
@@ -3044,7 +3044,7 @@ jobs:
                   f.write_text(text)
                   fixed.append(desc + "(" + rel + ")")
 
-          # fs/exec.c：su_compat 在 ApkeSU 中是 bool；sucompat 调用改走桥接桩
+          # fs/exec.c：su_compat 在 SterSU 中是 bool；sucompat 调用改走桥接桩
           fix_file("fs/exec.c", [
               ("extern struct static_key_true ksu_su_compat_enabled;",
                "extern bool ksu_su_compat_enabled;"),
@@ -3054,7 +3054,7 @@ jobs:
                "ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags)"),
           ], "exec.c")
 
-          # fs/open.c、fs/stat.c：su_compat static_key → ApkeSU 的 bool
+          # fs/open.c、fs/stat.c：su_compat static_key → SterSU 的 bool
           for rel in ["fs/open.c", "fs/stat.c"]:
               fix_file(rel, [
                   ("extern struct static_key_true ksu_su_compat_enabled;",
@@ -3086,8 +3086,8 @@ jobs:
           print("50_add 插桩修复: " + ", ".join(fixed) if fixed else "50_add 插桩修复: 无需修改")
           PY
 
-      - name: 注入 SukiSU/ReSukiSU/ApkeSU KPM Kconfig
-        if: inputs.use_kpm && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU')
+      - name: 注入 SukiSU/ReSukiSU/SterSU KPM Kconfig
+        if: inputs.use_kpm && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'SterSU')
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: kpm
@@ -4113,7 +4113,7 @@ jobs:
           fi
 
           kpm_config_supported="false"
-          if [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ApkeSU" ]; then
+          if [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.ksu_variant }}" == "SterSU" ]; then
             if [ "$kpm_kconfig_ready" = "true" ] && [ -f "$kpm_kconfig_path" ]; then
               kpm_config_supported="true"
             else
@@ -4126,7 +4126,7 @@ jobs:
             fi
           fi
 
-          if [ "${{ inputs.use_kpm }}" == "true" ] && ! feature_disabled kpm && { [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ApkeSU" ]; }; then
+          if [ "${{ inputs.use_kpm }}" == "true" ] && ! feature_disabled kpm && { [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.ksu_variant }}" == "SterSU" ]; }; then
             if [ "$kpm_config_supported" = "true" ]; then
               echo "CONFIG_KPM=y" >> "$DEFCONFIG"
               case "$kpm_kconfig_status" in
@@ -4144,14 +4144,14 @@ jobs:
               echo "::error::请求启用 KPM，但当前 ${{ inputs.ksu_variant }} 源码树仍未提供 config KPM。"
               exit 1
             fi
-          elif [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ApkeSU" ]; then
+          elif [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.ksu_variant }}" == "SterSU" ]; then
             if [ "$kpm_config_supported" = "true" ]; then
               echo "# CONFIG_KPM is not set" >> "$DEFCONFIG"
               echo "检测到 KPM Kconfig，已显式关闭 CONFIG_KPM。"
             fi
           fi
 
-          if [ "${{ inputs.enable_susfs }}" != "true" ] && { [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ApkeSU" ]; }; then
+          if [ "${{ inputs.enable_susfs }}" != "true" ] && { [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ] || [ "${{ inputs.ksu_variant }}" == "SterSU" ]; }; then
             cat >> "$DEFCONFIG" << 'EOF'
           # CONFIG_KSU_SUSFS is not set
           # CONFIG_KSU_SUSFS_SUS_PATH is not set
@@ -4170,7 +4170,7 @@ jobs:
           if [[ ! "$CURRENT_SUB" =~ ^[0-9]+$ ]]; then
             CURRENT_SUB=99999
           fi
-          if [[ ( "${{ inputs.ksu_variant }}" == "Official" || "${{ inputs.ksu_variant }}" == "ReSukiSU" || "${{ inputs.ksu_variant }}" == "ApkeSU" ) && "${{ inputs.android_version }}" == "android13" && "${{ inputs.kernel_version }}" == "5.15" && "$CURRENT_SUB" -ge 41 && "$CURRENT_SUB" -le 137 ]]; then
+          if [[ ( "${{ inputs.ksu_variant }}" == "Official" || "${{ inputs.ksu_variant }}" == "ReSukiSU" || "${{ inputs.ksu_variant }}" == "SterSU" ) && "${{ inputs.android_version }}" == "android13" && "${{ inputs.kernel_version }}" == "5.15" && "$CURRENT_SUB" -ge 41 && "$CURRENT_SUB" -le 137 ]]; then
             {
               echo "CONFIG_KALLSYMS=y"
               echo "CONFIG_KALLSYMS_ALL=y"
@@ -4180,7 +4180,7 @@ jobs:
           sed -i 's/check_defconfig//' ./common/build.config.gki
 
       - name: 配置 KPM 超级密码
-        if: inputs.use_kpm && inputs.kpm_password != '' && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU')
+        if: inputs.use_kpm && inputs.kpm_password != '' && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'SterSU')
         run: |
           echo "KPM 超级密码将在 Image KPM patch 阶段写入。"
           echo "CONFIG_KPM_SUPER_KEY 不是当前 KSU Kconfig 符号，不能写入 defconfig fragment。"
@@ -6082,9 +6082,9 @@ jobs:
 
       - name: 补齐 SukiSU SUSFS 内联 hook 符号
         if: inputs.ksu_variant == 'SukiSU' && inputs.enable_susfs
-        # 注：ApkeSU 不运行 fix_sukisu_susfs.py —— 该脚本面向 SukiSU/ReSukiSU 的 legacy
-        # sucompat/内置 SUSFS 调用链，ApkeSU 的 SUSFS 源码集成由
-        # "桥接 ApkeSU SUSFS 符号" + "修复 50_add 内核插桩 ApkeSU 兼容" 两个步骤完成。
+        # 注：SterSU 不运行 fix_sukisu_susfs.py —— 该脚本面向 SukiSU/ReSukiSU 的 legacy
+        # sucompat/内置 SUSFS 调用链，SterSU 的 SUSFS 源码集成由
+        # "桥接 SterSU SUSFS 符号" + "修复 50_add 内核插桩 SterSU 兼容" 两个步骤完成。
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: susfs
@@ -6094,8 +6094,8 @@ jobs:
           set -euo pipefail
           python3 "$GITHUB_WORKSPACE/.github/scripts/fix_sukisu_susfs.py" "$KERNEL_ROOT"
 
-      - name: 最终修复 SukiSU/ReSukiSU/ApkeSU 源码兼容
-        if: inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU'
+      - name: 最终修复 SukiSU/ReSukiSU/SterSU 源码兼容
+        if: inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'SterSU'
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: kernelsu
@@ -6820,8 +6820,8 @@ jobs:
             echo "当前 SUSFS 最新提交日期: ${SUSFS_LATEST_COMMIT_DATE}"
             echo "如果日期不同或相差过远则补丁失效、编译失败"
 
-      - name: 应用 KPM 补丁 (SukiSU/ReSukiSU/ApkeSU)
-        if: inputs.use_kpm && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'ApkeSU')
+      - name: 应用 KPM 补丁 (SukiSU/ReSukiSU/SterSU)
+        if: inputs.use_kpm && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'SterSU')
         env:
           BASH_ENV: ${{ inputs.source_mode == 'custom_git' && format('{0}/.github/scripts/custom-source-feature-env.sh', github.workspace) || '' }}
           ABK_FEATURE_ID: kpm
@@ -6899,8 +6899,8 @@ jobs:
           ZIP_NAME="${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ inputs.os_patch_level }}-AnyKernel3.zip"
           mv ../Image ./Image
 
-          # ===== 复制 ApkeSU ko 模块到 AnyKernel3 =====
-          if [ "${{ inputs.ksu_variant }}" = "ApkeSU" ]; then
+          # ===== 复制 SterSU ko 模块到 AnyKernel3 =====
+          if [ "${{ inputs.ksu_variant }}" = "SterSU" ]; then
             mkdir -p modules
             if [ -f "$KERNEL_ROOT/KernelSU/prebuilt/kernelsu.ko" ]; then
               cp -f "$KERNEL_ROOT/KernelSU/prebuilt/kernelsu.ko" modules/
