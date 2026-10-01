@@ -4235,13 +4235,14 @@ jobs:
           ]
           defined = set()
           pat = re.compile(r"(?m)^\s*config\s+([A-Za-z0-9_]+)\b")
-          kroot = Path("common")
-          if kroot.is_dir():
-              for p in kroot.rglob("Kconfig*"):
-                  try:
-                      defined.update(pat.findall(p.read_text(errors="ignore")))
-                  except Exception:
-                      pass
+          # 搜索内核 common/ 目录的 Kconfig
+          for kroot in [Path("common"), Path("KernelSU")]:
+              if kroot.is_dir():
+                  for p in kroot.rglob("Kconfig*"):
+                      try:
+                          defined.update(pat.findall(p.read_text(errors="ignore")))
+                      except Exception:
+                          pass
           lines = []
           skipped = []
           for sym in enable_syms:
