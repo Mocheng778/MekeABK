@@ -269,6 +269,11 @@ jobs:
           "https://api.github.com/repos/sidex15/susfs4ksu-module/actions/workflows/build.yml/runs?status=success" |
           jq -r '.workflow_runs[0].id')
 
+          if [ -z "$BUILD_ID" ] || [ "$BUILD_ID" = "null" ]; then
+            echo "::warning::未获取到 sidex15/susfs4ksu-module 的成功构建（仓库可能已删除/私有），跳过 SUSFS 模块下载。内核已内置 SUSFS 嵌入，不影响使用。"
+            exit 0
+          fi
+
           ARTIFACTS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
           "https://api.github.com/repos/sidex15/susfs4ksu-module/actions/runs/$BUILD_ID/artifacts")
 
