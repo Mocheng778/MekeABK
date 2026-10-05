@@ -1438,11 +1438,11 @@ jobs:
               printf 'versionCode=33000\nversionName=3.3.0\n' > version.properties
               echo "[+] SterSU 驱动版本固定为: $KSU_VERSION（匹配管理器 3.3.0），version.properties 已写入"
 
-              # ===== 修复 SterSU SUSFS 变体文件 -Werror,-Wpointer-bool-conversion（6.6+ 内核 GCC）=====
+              # ===== 修复 SterSU SUSFS 变体文件 -Werror 函数指针布尔判断（6.6+ 内核 Clang）=====
               if [ -f "kernel/feature/selinux_hide_susfs.c" ]; then
-                sed -i 's/if (security_dump_masked_av_fn)/if (security_dump_masked_av_fn != NULL)/g' kernel/feature/selinux_hide_susfs.c
-                sed -i 's/if (context_struct_compute_av_fn)/if (context_struct_compute_av_fn != NULL)/g' kernel/feature/selinux_hide_susfs.c
-                echo "[+] 已修复 selinux_hide_susfs.c pointer-bool-conversion（security_dump_masked_av_fn/context_struct_compute_av_fn）"
+                sed -i 's/if (security_dump_masked_av_fn)/if ((void *)security_dump_masked_av_fn)/g' kernel/feature/selinux_hide_susfs.c
+                sed -i 's/if (context_struct_compute_av_fn)/if ((void *)context_struct_compute_av_fn)/g' kernel/feature/selinux_hide_susfs.c
+                echo "[+] 已修复 selinux_hide_susfs.c 函数指针布尔判断（void* 转换避免 -Wtautological-pointer-compare）"
               fi
 
               # ===== 下载 SterSU 预编译 ko 模块（仅在未启用 SUSFS 时使用）=====
