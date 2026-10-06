@@ -15,9 +15,9 @@ on:
           - None
           - Official
           - SukiSU
-          - ReSukiSU
+          - BakaSU
           - SterSU
-        default: ReSukiSU
+        default: BakaSU
       kernelsu_branch:
         description: "KSU 分支"
         required: true
@@ -206,8 +206,6 @@ jobs:
         include:
           - sub_level: "23"
             os_patch_level: "2025-06"
-          - sub_level: "30"
-            os_patch_level: "2025-07"
           - sub_level: "38"
             os_patch_level: "2025-09"
           - sub_level: "58"

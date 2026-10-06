@@ -55,9 +55,9 @@ on:
           - None
           - Official
           - SukiSU
-          - ReSukiSU
+          - BakaSU
           - SterSU
-        default: ReSukiSU
+        default: BakaSU
       kernelsu_branch:
         description: "KSU 分支"
         required: true

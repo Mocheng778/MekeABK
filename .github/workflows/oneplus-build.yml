@@ -83,7 +83,7 @@ jobs:
 
           effective_kpm="$USE_KPM"
           effective_lz4kd="$USE_LZ4KD"
-          if [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "ReSukiSU" ] && [ "$KSU_VARIANT" != "SterSU" ]; then
+          if [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "BakaSU" ] && [ "$KSU_VARIANT" != "SterSU" ]; then
             effective_kpm="false"
           fi
           if [ "$KSU_VARIANT" = "None" ]; then
@@ -204,7 +204,7 @@ jobs:
           if [[ "$CPU" == mt* && "$USE_PROXY_OPTIMIZATION" = "true" ]]; then
             echo "::warning::MTK 分支已强制关闭代理相关网络优化。"
           fi
-          if [ "$USE_KPM" = "true" ] && [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "ReSukiSU" ] && [ "$KSU_VARIANT" != "SterSU" ]; then
+          if [ "$USE_KPM" = "true" ] && [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "BakaSU" ] && [ "$KSU_VARIANT" != "SterSU" ]; then
             echo "::error::Official / None 变体不支持 KPM，请关闭 KPM 后重试。"
             exit 1
           fi
@@ -347,8 +347,8 @@ jobs:
               SukiSU)
                 curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/builtin/kernel/setup.sh" | bash -s builtin
                 ;;
-              ReSukiSU)
-                curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s main
+              BakaSU)
+                curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash -s main
                 ;;
               SterSU)
                 echo "添加 SterSU..."
@@ -458,9 +458,9 @@ jobs:
             cp "$WORKSPACE/susfs4oki/kernel_patches/50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch" "$COMMON_ROOT/" || true
             cp "$WORKSPACE"/susfs4oki/kernel_patches/fs/* "$COMMON_ROOT/fs/" || true
             cp "$WORKSPACE"/susfs4oki/kernel_patches/include/linux/* "$COMMON_ROOT/include/linux/" || true
-          elif [ "$KSU_VARIANT" = "SukiSU" ] || [ "$KSU_VARIANT" = "ReSukiSU" ]; then
+          elif [ "$KSU_VARIANT" = "SukiSU" ] || [ "$KSU_VARIANT" = "BakaSU" ]; then
             case "$KSU_VARIANT" in
-              ReSukiSU)
+              BakaSU)
                 MANUAL_HOOK_PATCH_NAME="scope_min_manual_hooks_v1.9.patch"
                 ;;
               SukiSU)
@@ -723,8 +723,8 @@ jobs:
               raise SystemExit(f"{root} does not contain a supported SELinux compatibility source file")
           PY
 
-      - name: 修复 SukiSU/ReSukiSU/SterSU sulog 兼容
-        if: ${{ inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'SterSU' }}
+      - name: 修复 SukiSU/BakaSU/SterSU sulog 兼容
+        if: ${{ inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'BakaSU' || inputs.ksu_variant == 'SterSU' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -740,7 +740,7 @@ jobs:
           done
 
           if [ -z "$KSU_BUILD_DIR" ]; then
-            echo "::warning::未找到 SukiSU/ReSukiSU/SterSU 编译目录，跳过 sulog 兼容修复。"
+            echo "::warning::未找到 SukiSU/BakaSU/SterSU 编译目录，跳过 sulog 兼容修复。"
             exit 0
           fi
 
@@ -806,8 +806,60 @@ jobs:
               raise SystemExit(f"{path} contains an incomplete ABK ksu_sulog_capture compatibility block")
           PY
 
-      - name: 修复 SukiSU/ReSukiSU/SterSU android16-6.12 源码兼容
-        if: ${{ (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'SterSU') && inputs.android_version == 'android16' && inputs.kernel_version == '6.12' }}
+          # 为 SukiSU/BakaSU 补齐 SUSFS post-exec su-session fd wrapper 定义。
+          # 50_add_susfs 会向 common/fs/exec.c 注入 ksu_handle_post_execveat_sucompat() 调用,
+          # 但 SukiSU 源码未随之提供该定义,导致 OnePlus 链接期出现 undefined symbol。
+          # 仅当 exec.c 实际引用该符号、且 sucompat.c 尚无定义、且存在预期 marker 时才注入,
+          # 否则安全跳过(与 GKI build.yml 的 ensure_post_execveat_wrapper 行为一致,纯新增)。
+          if [ -f "$KSU_BUILD_DIR/feature/sucompat.c" ] && [ -f "$KERNEL_ROOT/common/fs/exec.c" ] \
+            && grep -qF 'ksu_handle_post_execveat_sucompat(' "$KERNEL_ROOT/common/fs/exec.c"; then
+            python3 - "$KSU_BUILD_DIR/feature/sucompat.c" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          text = path.read_text()
+
+          if "int ksu_handle_post_execveat_sucompat(" in text:
+              print(f"no change for {path} (wrapper already present)")
+              raise SystemExit(0)
+
+          marker = "\n// sucompat: permitted process can execute 'su' to gain root access."
+          if marker not in text:
+              print(f"no change for {path} (marker absent)")
+              raise SystemExit(0)
+
+          if '#include "supercall/supercall.h"' not in text:
+              include_anchor = '#include "ksu.h" // IWYU pragma: keep\n'
+              if include_anchor not in text:
+                  include_anchor = '#include "ksu.h"\n'
+              if include_anchor not in text:
+                  raise SystemExit(f"无法定位 {path} 的 supercall.h include 插入点")
+              text = text.replace(include_anchor, include_anchor + '#include "supercall/supercall.h"\n', 1)
+
+          block = "\n".join([
+              "",
+              "",
+              "#ifdef CONFIG_KSU_SUSFS",
+              "int ksu_handle_post_execveat_sucompat(int *fd, struct filename **filename_ptr,",
+              "                                      void *argv_user, void *envp_user,",
+              "                                      int *flags, int *retval)",
+              "{",
+              "    if (*retval >= 0)",
+              "        (void)ksu_install_su_fd();",
+              "    return 0;",
+              "}",
+              "#endif",
+              "",
+          ])
+
+          path.write_text(text.replace(marker, block + marker, 1))
+          print(f"patched {path} (SUSFS post-exec su-session fd wrapper)")
+          PY
+          fi
+
+      - name: 修复 SukiSU/BakaSU/SterSU android16-6.12 源码兼容
+        if: ${{ (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'BakaSU' || inputs.ksu_variant == 'SterSU') && inputs.android_version == 'android16' && inputs.kernel_version == '6.12' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -823,7 +875,7 @@ jobs:
           done
 
           if [ -z "$KSU_BUILD_DIR" ]; then
-            echo "::error::未找到实际 SukiSU/ReSukiSU/SterSU 编译目录"
+            echo "::error::未找到实际 SukiSU/BakaSU/SterSU 编译目录"
             exit 1
           fi
 
@@ -889,11 +941,11 @@ jobs:
                       print("已适配 android16-6.12 security_add_hooks() 的 struct lsm_id 参数")
 
           if not changed:
-              print("SukiSU/ReSukiSU/SterSU android16-6.12 专项兼容修复无需修改。")
+              print("SukiSU/BakaSU/SterSU android16-6.12 专项兼容修复无需修改。")
           PY
 
-      - name: 注入 SukiSU/ReSukiSU/SterSU KPM Kconfig
-        if: ${{ inputs.use_kpm && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'SterSU') }}
+      - name: 注入 SukiSU/BakaSU/SterSU KPM Kconfig
+        if: ${{ inputs.use_kpm && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'BakaSU' || inputs.ksu_variant == 'SterSU') }}
         shell: bash
         run: |
           set -euo pipefail
@@ -1010,7 +1062,7 @@ jobs:
           EOF
 
           kpm_config_supported="false"
-          if [ "$KSU_VARIANT" = "SukiSU" ] || [ "$KSU_VARIANT" = "ReSukiSU" ] || [ "$KSU_VARIANT" = "SterSU" ]; then
+          if [ "$KSU_VARIANT" = "SukiSU" ] || [ "$KSU_VARIANT" = "BakaSU" ] || [ "$KSU_VARIANT" = "SterSU" ]; then
             if [ "$kpm_kconfig_ready" = "true" ] && [ -f "$kpm_kconfig_path" ]; then
               kpm_config_supported="true"
             else
@@ -1039,7 +1091,7 @@ jobs:
           elif [ "$EFFECTIVE_KPM" = "true" ]; then
             echo "::error::请求启用 KPM，但当前 $KSU_VARIANT 源码树仍未提供 config KPM。"
             exit 1
-          elif [ "$KSU_VARIANT" = "SukiSU" ] || [ "$KSU_VARIANT" = "ReSukiSU" ] || [ "$KSU_VARIANT" = "SterSU" ]; then
+          elif [ "$KSU_VARIANT" = "SukiSU" ] || [ "$KSU_VARIANT" = "BakaSU" ] || [ "$KSU_VARIANT" = "SterSU" ]; then
             if [ "$kpm_config_supported" = "true" ]; then
               echo "# CONFIG_KPM is not set" >> "$DEFCONFIG_PATH"
               echo "检测到 KPM Kconfig，已显式关闭 CONFIG_KPM。"
