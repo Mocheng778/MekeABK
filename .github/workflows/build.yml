@@ -642,9 +642,13 @@ jobs:
           for tool in fsck.erofs mkfs.erofs; do
             found=$(find /usr -name "$tool" -type f 2>/dev/null | head -1)
             if [ -n "$found" ]; then
-              sudo ln -sf "$found" "/usr/bin/$tool"
-              sudo ln -sf "$found" "/usr/local/bin/$tool"
-              echo "[+] 链接 $tool -> $found（/usr/bin + /usr/local/bin）"
+              for target_dir in /usr/bin /usr/local/bin; do
+                target="$target_dir/$tool"
+                if [ "$found" != "$target" ]; then
+                  sudo ln -sf "$found" "$target" 2>/dev/null || true
+                fi
+              done
+              echo "[+] $tool -> $found（已确保 /usr/bin + /usr/local/bin 可用）"
             fi
           done
           which mkfs.erofs && mkfs.erofs --version 2>&1 | head -1 || echo "::warning::mkfs.erofs 仍不可用"
