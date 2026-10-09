@@ -409,8 +409,16 @@ jobs:
                 KSU_GIT_VERSION=$(git rev-list --count HEAD)
                 KSU_VERSION=$((30000 + KSU_GIT_VERSION))
                 echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
-                # Kbuild 支持 KSU_VERSION_OVERRIDE 变量覆盖版本号
-                echo "KSU_VERSION_OVERRIDE=$KSU_VERSION" >> $GITHUB_ENV
+
+                # SterSU 驱动版本固定为 33000，与管理器 3.3.0 版本一致
+                # （KSU_VERSION_OVERRIDE 环境变量无法传入 bazel 沙箱，所以直接写 version.properties 文件最可靠）
+                KSU_VERSION=33000
+                KSU_VERSION_OVERRIDE=33000
+                echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
+                echo "KSU_VERSION_OVERRIDE=$KSU_VERSION_OVERRIDE" >> $GITHUB_ENV
+                # 直接写 version.properties，Kbuild 会优先读这个文件（$(MDIR)/../version.properties）
+                printf 'versionCode=33000\nversionName=3.3.0\n' > version.properties
+                echo "[+] SterSU 驱动版本固定为: $KSU_VERSION（匹配管理器 3.3.0），version.properties 已写入"
                 cd ..
                 ;;
               *)
