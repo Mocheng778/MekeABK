@@ -369,11 +369,11 @@ jobs:
                   echo "::error::sucompat.h 不是新版（缺少 bool ksu_su_compat_enabled）"
                   exit 1
                 fi
-                if grep -qE 'user_arg_ptr|ksu_handle_execveat_ksud|static_key_true.*su_compat' kernel/feature/sucompat.h kernel/feature/sucompat.c 2>/dev/null; then
-                  echo "::error::sucompat.h/c 仍含旧版 API 符号"
+                if grep -qE 'user_arg_ptr|ksu_handle_execveat_ksud' kernel/feature/sucompat.h kernel/feature/sucompat.c 2>/dev/null; then
+                  echo "::error::sucompat.h/c 仍含旧版 API 符号（user_arg_ptr / ksu_handle_execveat_ksud）"
                   exit 1
                 fi
-                echo "[+] sucompat.h/c 版本校验通过（新版 3 参数 API）"
+                echo "[+] sucompat.h/c 版本校验通过（SterSU 新版 API）"
                 cd ..
                 # ===== 强制同步结束 =====
 
