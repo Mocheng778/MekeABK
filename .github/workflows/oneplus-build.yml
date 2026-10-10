@@ -411,23 +411,23 @@ jobs:
                 echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
 
                 # SterSU 驱动版本从最新 Release 动态获取，确保与管理器版本一致
-                # （公开仓库 API 无需 token，仅受速率限制；失败时回退到 33000）
-                APKESU_LATEST_APK=$(curl -fsSL "https://api.github.com/repos/Mocheng778/SterSU/releases/latest" \
-                  | jq -r ".assets[].name" | grep -E '\.apk$' | head -1 || true)
-                if [ -n "$APKESU_LATEST_APK" ] && [ "$APKESU_LATEST_APK" != "null" ]; then
+                # （从 releases HTML 页面解析，不受 API 速率限制；失败时回退到 33100）
+                APKESU_LATEST_APK=$(curl -fsSL "https://github.com/Mocheng778/SterSU/releases/latest" \
+                  | grep -oE 'SterSU_[0-9.]+_[0-9]+-release\.apk' | head -1 || true)
+                if [ -n "$APKESU_LATEST_APK" ]; then
                   KSU_VERSION=$(echo "$APKESU_LATEST_APK" | grep -oE '_[0-9]+-' | tr -d '_-')
                   KSU_VERSION_NAME=$(echo "$APKESU_LATEST_APK" | sed -E 's/SterSU_([0-9.]+)_[0-9]+-.*/\1/')
                   if [ -z "$KSU_VERSION" ] || [ "$KSU_VERSION" -le 30000 ] 2>/dev/null; then
-                    KSU_VERSION=33000
-                    KSU_VERSION_NAME=3.3.0
+                    KSU_VERSION=33100
+                    KSU_VERSION_NAME=3.3.1
                     echo "[!] Release 版本号解析失败，回退到硬编码: $KSU_VERSION"
                   else
                     echo "[+] SterSU 驱动版本从 Release 获取: $KSU_VERSION ($KSU_VERSION_NAME)"
                   fi
                 else
-                  KSU_VERSION=33000
-                  KSU_VERSION_NAME=3.3.0
-                  echo "[!] Release API 请求失败，回退到硬编码: $KSU_VERSION"
+                  KSU_VERSION=33100
+                  KSU_VERSION_NAME=3.3.1
+                  echo "[!] Release 页面请求失败，回退到硬编码: $KSU_VERSION"
                 fi
                 KSU_VERSION_OVERRIDE=$KSU_VERSION
                 echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
