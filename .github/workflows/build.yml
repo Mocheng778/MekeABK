@@ -6720,6 +6720,41 @@ jobs:
                               print(f"  已修复 {sulog_event_c} 的 grant_root argv 参数类型")
                               break
 
+              # ABK: SterSU — SUSFS/50_add 在 security/selinux/{hooks,selinuxfs}.c 中以 extern
+              # 全局符号引用 my_write_context/my_write_access/my_setprocattr，但 SterSU 的
+              # feature/selinux_hide.c 把它们定义为 static，导致 vmlinux 链接 undefined symbol。
+              # 这里去掉 static，使其成为可链接的全局符号。
+              selinux_hide_c = kernel_dir / "feature/selinux_hide.c"
+              if selinux_hide_c.exists():
+                  hide_text = selinux_hide_c.read_text()
+                  hide_orig = hide_text
+                  for fn in ("my_write_context", "my_write_access", "my_setprocattr"):
+                      hide_text = re.sub(
+                          r"(?m)^(\s*)static\s+((?:ssize_t|int)\s+(?:__nocfi\s+)?" + fn + r"\s*\()",
+                          r"\1\2",
+                          hide_text,
+                      )
+                  if hide_text != hide_orig:
+                      selinux_hide_c.write_text(hide_text)
+                      changed = True
+                      print(f"  已导出 {selinux_hide_c} 的 my_write_*/my_setprocattr 全局符号（去 static）")
+
+          # ABK: SterSU 未实现 preinit hook（ksu_setup_preinit_file /
+          # ksu_preinit_handle_post_execveat），susfs4ksu 补丁用 #ifndef KSU_NO_PREINIT
+          # 守卫了相关引用。此处定义 KSU_NO_PREINIT 以编译掉这些未定义符号的引用。
+          exec_c = Path("common/fs/exec.c")
+          if exec_c.is_file():
+              exec_text = exec_c.read_text()
+              if "ksu_setup_preinit_file" in exec_text and "define KSU_NO_PREINIT" not in exec_text:
+                  exec_text = exec_text.replace(
+                      "#ifndef KSU_NO_PREINIT",
+                      "#define KSU_NO_PREINIT /* ABK: SterSU 未实现 preinit hook */\n#ifndef KSU_NO_PREINIT",
+                      1,
+                  )
+                  exec_c.write_text(exec_text)
+                  changed = True
+                  print("  已在 common/fs/exec.c 定义 KSU_NO_PREINIT，禁用 preinit hook 引用")
+
           if not changed:
               print("SukiSU 源码兼容修复无需修改。")
           PY
