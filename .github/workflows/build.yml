@@ -6845,6 +6845,29 @@ jobs:
                   changed = True
                   print(f"  已向 {susfs_hide_c} 追加 my_write_*/my_setprocattr 实现（补全 SUSFS 变体）")
 
+              # ABK: Pseudo-SterSU 在 UAPI 头文件存在时编译 preinit/preinit.o，但 SUSFS 模式
+              # Kbuild 不编译 hook/arm64/syscall_hook.o（它定义 ksu_syscall_table），导致
+              # preinit.o 引用的 ksu_syscall_table 链接未定义。且 susfs4ksu 的 preinit API
+              # （ksu_setup_preinit_file / ksu_preinit_handle_post_execveat）与 Pseudo-SterSU
+              # （ksu_preinit_handle_execve）不匹配。直接禁用 preinit：移除 preinit.o/blob.o，
+              # 并全局定义 KSU_NO_PREINIT（preinit.h 会把相关调用变成 inline 空实现）。
+              kbuild = kernel_dir / "Kbuild"
+              if kbuild.is_file():
+                  kb_text = kbuild.read_text()
+                  kb_orig = kb_text
+                  kb_text = kb_text.replace("kernelsu-objs += preinit/preinit.o\n", "")
+                  kb_text = kb_text.replace("kernelsu-objs += preinit/blob.o\n", "")
+                  if "-DKSU_NO_PREINIT" not in kb_text:
+                      kb_text = kb_text.replace(
+                          "ccflags-y += -I$(KSU_KERNEL_DIR)",
+                          "ccflags-y += -DKSU_NO_PREINIT\nccflags-y += -I$(KSU_KERNEL_DIR)",
+                          1,
+                      )
+                  if kb_text != kb_orig:
+                      kbuild.write_text(kb_text)
+                      changed = True
+                      print(f"  已在 {kbuild} 禁用 preinit（移除 preinit.o/blob.o + 定义 KSU_NO_PREINIT）")
+
           # ABK: SterSU 未实现 preinit hook（ksu_setup_preinit_file /
           # ksu_preinit_handle_post_execveat），susfs4ksu 补丁用 #ifndef KSU_NO_PREINIT
           # 守卫了相关引用。此处定义 KSU_NO_PREINIT 以编译掉这些未定义符号的引用。
