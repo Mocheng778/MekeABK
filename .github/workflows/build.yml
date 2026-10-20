@@ -1463,7 +1463,7 @@ jobs:
             "SterSU")
               echo "添加 SterSU..."
               # setup.sh 内部默认克隆 fixz232/ApkeSU（已删），必须用 APKESU_REPO 覆盖为 SterSU 仓库
-              curl -LSs "https://raw.githubusercontent.com/Mocheng778/SterSU/main/kernel/setup.sh" | APKESU_REPO=https://github.com/Mocheng778/SterSU.git bash -s main
+              curl -LSs "https://raw.githubusercontent.com/fixz232/Pseudo-SterSU/main/kernel/setup.sh" | APKESU_REPO=https://github.com/fixz232/Pseudo-SterSU.git bash -s main
 
               # ===== 强制同步 + 直接覆盖 sucompat 源文件（保证新版 API 一致）=====
               cd KernelSU
@@ -1471,7 +1471,7 @@ jobs:
               git reset --hard origin/main
               APKESU_HEAD="$(git rev-parse --short=12 HEAD)"
               echo "[+] SterSU 已同步到: ${APKESU_HEAD}"
-              APKESU_RAW="https://raw.githubusercontent.com/Mocheng778/SterSU/main/kernel/feature"
+              APKESU_RAW="https://raw.githubusercontent.com/fixz232/Pseudo-SterSU/main/kernel/feature"
               curl -fsSL "${APKESU_RAW}/sucompat.h" -o kernel/feature/sucompat.h || { echo "::error::下载 sucompat.h 失败"; exit 1; }
               curl -fsSL "${APKESU_RAW}/sucompat.c" -o kernel/feature/sucompat.c || { echo "::error::下载 sucompat.c 失败"; exit 1; }
               echo "[+] sucompat.h/c 已从上游 SterSU 分支直接覆盖"
@@ -1528,7 +1528,7 @@ jobs:
 
               # SterSU 驱动版本从最新 Release 动态获取，确保与管理器版本一致
               # （从 releases HTML 页面解析，不受 API 速率限制；失败时回退到 33100）
-              APKESU_LATEST_APK=$(curl -fsSL "https://github.com/Mocheng778/SterSU/releases/latest" \
+              APKESU_LATEST_APK=$(curl -fsSL "https://github.com/fixz232/Pseudo-SterSU/releases/latest" \
                 | grep -oE 'SterSU_[0-9.]+_[0-9]+-release\.apk' | head -1 || true)
               if [ -n "$APKESU_LATEST_APK" ]; then
                 KSU_VERSION=$(echo "$APKESU_LATEST_APK" | grep -oE '_[0-9]+-' | tr -d '_-')
@@ -1564,7 +1564,7 @@ jobs:
                 mkdir -p prebuilt
                 ANDROID_VERSION="${{ inputs.android_version }}"
                 KERNEL_VERSION="${{ inputs.kernel_version }}"
-                APKESU_KO_BASE="https://raw.githubusercontent.com/Mocheng778/SterSU/main/userspace/ksud/bin/aarch64"
+                APKESU_KO_BASE="https://raw.githubusercontent.com/fixz232/Pseudo-SterSU/main/userspace/ksud/bin/aarch64"
                 KO_KERNEL_NAME="${ANDROID_VERSION}-${KERNEL_VERSION}_kernelsu.ko"
                 KO_PATHMASK_NAME="${ANDROID_VERSION}-${KERNEL_VERSION}_pathmask.ko"
                 echo "[+] 下载 SterSU ko: ${KO_KERNEL_NAME}"
