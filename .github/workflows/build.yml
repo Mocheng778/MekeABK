@@ -6868,6 +6868,20 @@ jobs:
                       changed = True
                       print(f"  已在 {kbuild} 禁用 preinit（移除 preinit.o/blob.o + 定义 KSU_NO_PREINIT）")
 
+              # 强制 preinit.h 走 inline 空实现分支（不依赖 ccflags 是否传递 -DKSU_NO_PREINIT）。
+              preinit_h = kernel_dir / "preinit/preinit.h"
+              if preinit_h.is_file():
+                  ph_text = preinit_h.read_text()
+                  if "#ifndef KSU_NO_PREINIT" in ph_text:
+                      ph_text = ph_text.replace(
+                          "#ifndef KSU_NO_PREINIT",
+                          "#if 0 /* ABK: preinit disabled — SUSFS 模式无 ksu_syscall_table */",
+                          1,
+                      )
+                      preinit_h.write_text(ph_text)
+                      changed = True
+                      print(f"  已强制 {preinit_h} 走 inline 空实现（禁用 preinit 外部符号）")
+
           # ABK: SterSU 未实现 preinit hook（ksu_setup_preinit_file /
           # ksu_preinit_handle_post_execveat），susfs4ksu 补丁用 #ifndef KSU_NO_PREINIT
           # 守卫了相关引用。此处定义 KSU_NO_PREINIT 以编译掉这些未定义符号的引用。
