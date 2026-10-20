@@ -2755,6 +2755,56 @@ jobs:
                   fix_task_mmu_show_pad
                 fi
               fi
+
+              # 修复 Android 13 - 5.15 (所有子版本): SUSFS 补丁在 namespace.c 头部 hunk
+              # 因上下文不匹配而失败，导致函数体中的 SUSFS 符号（DEFAULT_KSU_MNT_ID 等）未声明。
+              # 子版本 >137（如 180/185/194…）也会命中，因此不限定在 41-137 范围内。
+              # 注入点定位到 include 区域末尾，不依赖固定锚点（固定锚点同样可能随子版本漂移）。
+              python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path("./fs/namespace.c")
+          if not path.is_file():
+              raise SystemExit(0)
+          text = path.read_text()
+
+          needed = ("DEFAULT_KSU_MNT_ID", "VFSMOUNT_MNT_FLAGS_KSU_UNSHARED_MNT",
+                    "CL_COPY_MNT_NS", "susfs_is_current_ksu_domain",
+                    "susfs_is_current_proc_umounted",
+                    "susfs_is_sdcard_android_data_not_decrypted")
+          if not any(name in text for name in needed):
+              raise SystemExit(0)
+
+          include_re = re.compile(r"(?m)^[ \t]*#[ \t]*include[ \t]+[<\"][^>\"]+[>\"]")
+
+          def last_include_pos():
+              matches = list(include_re.finditer(text))
+              if not matches:
+                  raise SystemExit(f"无法定位 {path} 的 include 区域")
+              return matches[-1].end()
+
+          if "#include <linux/susfs_def.h>" not in text:
+              insert_at = last_include_pos()
+              block = ("\n#ifdef CONFIG_KSU_SUSFS\n"
+                       "#include <linux/susfs_def.h>\n"
+                       "#endif // #ifdef CONFIG_KSU_SUSFS\n")
+              text = text[:insert_at] + block + text[insert_at:]
+              print("已注入 namespace.c 的 susfs_def.h 头文件")
+
+          if "extern bool susfs_is_current_ksu_domain(void);" not in text:
+              insert_at = last_include_pos()
+              block = ("\n#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n"
+                       "extern bool susfs_is_current_ksu_domain(void);\n"
+                       "extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;\n"
+                       "\n"
+                       "#define CL_COPY_MNT_NS BIT(25) /* used by copy_mnt_ns() */\n"
+                       "#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n")
+              text = text[:insert_at] + block + text[insert_at:]
+              print("已注入 namespace.c 的 SUSFS extern 声明与 CL_COPY_MNT_NS")
+
+          path.write_text(text)
+          PY
             fi
 
             # Android 14 - 6.1 修复
