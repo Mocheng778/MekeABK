@@ -2876,9 +2876,10 @@ jobs:
                 echo "已修复 exec.c 缺少 susfs_def.h 问题"
               fi
 
-              # 修复 6.12.58+: SUSFS 基础补丁对 task_mmu.c 的 show_smaps_rollup /
-              # pagemap_read hunk 在 -F 3 模糊匹配下错位，bypass_orig_flow 标签落到
-              # clear_refs 枚举里，导致 expected expression / 枚举解析错误级联。
+              # 修复 6.12.58+: SUSFS 基础补丁对 task_mmu.c 的 show_smaps_rollup hunk
+              # 在 -F 3 模糊匹配下错位，if 语句落到表达式上下文导致 expected expression，
+              # bypass_orig_flow 标签落到 clear_refs 枚举里。直接移除 show_smaps_rollup
+              # 中的 SUS_MAP 跳过逻辑（maps 主界面隐藏仍由 show_map_vma 正常工作）。
               python3 - <<'PY'
           from pathlib import Path
           import re
@@ -2889,7 +2890,7 @@ jobs:
           text = path.read_text()
           changed = False
 
-          # 1) 确保 susfs_def.h 已包含（SUSFS_IS_INODE_SUS_MAP 宏所在头文件）
+          # 1) 确保 susfs_def.h 已包含
           if ("SUSFS_IS_INODE_SUS_MAP" in text or "SUSFS_IS_INODE_OPEN_REDIRECT" in text) and "susfs_def.h" not in text:
               incs = list(re.finditer(r'(?m)^#include\s+[<"].*[>"]\s*$', text))
               if incs:
@@ -2899,54 +2900,58 @@ jobs:
                   changed = True
                   print("  已为 task_mmu.c 注入 susfs_def.h")
 
-          # 2) 移除错位的 bypass_orig_flow 标签（正确标签后面应紧跟 last_vma_end 或 mmap_read_unlock）
           lines = text.split("\n")
+
+          # 2) 移除 show_smaps_rollup 中错位的 SUS_MAP goto 块：
+          #    #ifdef CONFIG_KSU_SUSFS_SUS_MAP
+          #    if (vma->vm_file && SUSFS_IS_INODE_SUS_MAP(...))  goto bypass_orig_flow;
+          #    #endif
           out = []
           i = 0
-          removed = 0
+          removed_goto = 0
           while i < len(lines):
               s = lines[i].strip()
-              if s == "bypass_orig_flow:":
-                  j = i + 1
-                  while j < len(lines) and (lines[j].strip() == "" or lines[j].strip().startswith("#endif")):
-                      j += 1
-                  nxt = lines[j].strip() if j < len(lines) else ""
-                  if nxt.startswith("last_vma_end = vma->vm_end") or nxt.startswith("mmap_read_unlock(mm)"):
-                      out.append(lines[i])
-                  else:
-                      if out and out[-1].strip().startswith("#ifdef") and "SUS_MAP" in out[-1]:
-                          out.pop()
-                      removed += 1
-                      if i + 1 < len(lines) and lines[i + 1].strip().startswith("#endif"):
-                          i += 1
-              else:
-                  out.append(lines[i])
+              # 检测 #ifdef CONFIG_KSU_SUSFS_SUS_MAP 后跟 if (vma->vm_file && SUSFS_IS_INODE_SUS_MAP
+              if s.startswith("#ifdef") and "SUS_MAP" in s:
+                  # 向前看最多 5 行，判断是否为 show_smaps_rollup 的错位块
+                  window = "\n".join(lines[i:i+5])
+                  if "vma->vm_file" in window and "SUSFS_IS_INODE_SUS_MAP" in window and "goto bypass_orig_flow" in window and "vma_lookup" not in window:
+                      # 跳过 #ifdef / if / goto / #endif 块
+                      j = i + 1
+                      while j < len(lines) and not lines[j].strip().startswith("#endif"):
+                          j += 1
+                      if j < len(lines):
+                          j += 1  # skip #endif
+                      removed_goto += 1
+                      i = j
+                      continue
+              out.append(lines[i])
               i += 1
-          if removed:
-              text = "\n".join(out)
+          if removed_goto:
               changed = True
-              print(f"  已移除 {removed} 个错位 bypass_orig_flow 标签")
+              print(f"  已移除 {removed_goto} 个 show_smaps_rollup 错位 SUS_MAP 块")
 
-          # 3) 在 show_smaps_rollup 中 goto bypass_orig_flow 之后、last_vma_end 之前补回标签
-          lines = text.split("\n")
-          for gi, line in enumerate(lines):
-              if "goto bypass_orig_flow" in line:
-                  ctx = "\n".join(lines[max(0, gi - 2):gi + 1])
-                  if "vma->vm_file" in ctx and "vma_lookup" not in ctx:
-                      for j in range(gi + 1, min(gi + 80, len(lines))):
-                          if "last_vma_end = vma->vm_end" in lines[j]:
-                              if not any("bypass_orig_flow:" in lines[k] for k in range(max(0, j - 4), j)):
-                                  indent = lines[j][:len(lines[j]) - len(lines[j].lstrip())]
-                                  lines.insert(j, f"{indent}#ifdef CONFIG_KSU_SUSFS_SUS_MAP")
-                                  lines.insert(j + 1, f"{indent}bypass_orig_flow:")
-                                  lines.insert(j + 2, f"{indent}#endif")
-                                  changed = True
-                                  print("  已在 show_smaps_rollup 补回 bypass_orig_flow 标签")
-                              break
-                      break
-          text = "\n".join(lines)
+          # 3) 移除所有 bypass_orig_flow 标签（pagemap_read 的也一并移除，因为 goto 已不存在）
+          out2 = []
+          i = 0
+          removed_label = 0
+          while i < len(out):
+              s = out[i].strip()
+              if s == "bypass_orig_flow:":
+                  if out2 and out2[-1].strip().startswith("#ifdef") and "SUS_MAP" in out2[-1]:
+                      out2.pop()
+                  removed_label += 1
+                  if i + 1 < len(out) and out[i + 1].strip().startswith("#endif"):
+                      i += 1
+              else:
+                  out2.append(out[i])
+              i += 1
+          if removed_label:
+              changed = True
+              print(f"  已移除 {removed_label} 个 bypass_orig_flow 标签")
+          text = "\n".join(out2)
 
-          # 4) pagemap_read 中 vma 声明补初始值 NULL，消除 -Wsometimes-uninitialized
+          # 4) vma 声明补初始值 NULL，消除 -Wsometimes-uninitialized
           new_text, n = re.subn(
               r'(?m)^(\s*)struct vm_area_struct \*vma;\s*$',
               r'\1struct vm_area_struct *vma = NULL;',
